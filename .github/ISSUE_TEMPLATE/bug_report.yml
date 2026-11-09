@@ -1,0 +1,48 @@
+name: Bug report
+description: Something in Tabard is broken or wrong
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Please leave out officer notes and anything else about your guildmates that should stay private.
+  - type: input
+    id: version
+    attributes:
+      label: Tabard version
+      description: In the zip's name, the CurseForge app, or the `## Version` line of Tabard.toc.
+      placeholder: "1.0.0"
+    validations:
+      required: true
+  - type: input
+    id: patch
+    attributes:
+      label: WoW Forever patch
+      description: Shown at the bottom left of the login screen.
+      placeholder: "1.60.1"
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead. Screenshots help.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to make it happen again
+      placeholder: |
+        1. Type /tabard
+        2. Open the Members tab
+        3. ...
+  - type: textarea
+    id: error
+    attributes:
+      label: Lua error
+      description: If the game showed an error, paste the whole text. BugSack makes this easy, or turn errors on with `/console scriptErrors 1`.
+      render: text
+  - type: textarea
+    id: addons
+    attributes:
+      label: Other guild addons you run
+      description: For example Guild Roster Manager. Leave empty if none.
