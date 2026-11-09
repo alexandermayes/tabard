@@ -1,0 +1,502 @@
+-- Tabard: roster scanning
+-- Compares each roster update with the saved roster to find joins, leaves, promotions, demotions,
+-- level-ups, note changes and name changes, and reads the game's own guild event log for who did
+-- what (who invited whom, who removed whom) and for the hour it happened.
+
+local ADDON_NAME, GL = ...
+
+local SCAN_INTERVAL = 15          -- seconds between roster requests while the game keeps sending updates
+local LEAVE_CONFIRM_SCANS = 2     -- a member must be missing from this many scans in a row before "left" is recorded
+local GAME_LOG_WINDOW = 3 * 3600  -- how far apart a scan event and a game-log entry may be and still be the same thing
+local SEEN_KEEP = 60 * 86400      -- how long game-log fingerprints are remembered
+
+local frame = CreateFrame("Frame")
+local pendingScan, lastRequest, lastGameLogQuery = false, 0, 0
+local lastTick                     -- when newcomers were last credited time online
+
+-- Invites this character sent, from the "You have invited X to join your guild." system line: the quickest
+-- way to know the inviter when it is you. Keyed by lower-cased name; kept a quarter of an hour.
+local INVITE_KEEP = 900
+local pendingInvites = {}
+local invitePattern
+if ERR_GUILD_INVITE_S then
+    invitePattern = "^" .. string.gsub(string.gsub(ERR_GUILD_INVITE_S, "[%(%)%.%%%+%-%*%?%[%]%^%$]", "%%%0"), "%%%%s", "(.+)") .. "$"
+end
+
+local function noteInvite(text)
+    if not (invitePattern and type(text) == "string") or (issecretvalue and issecretvalue(text)) then return end
+    local name = string.match(text, invitePattern)
+    if not name then return end
+    pendingInvites[string.lower(GL:ShortName(name))] = { by = GL:PlayerName(), t = GL:Now() }
+end
+
+local function inviterFor(name, now)
+    local pending = pendingInvites[string.lower(name)]
+    if pending and now - pending.t <= INVITE_KEEP then return pending.by end
+end
+
+-- Roster ------------------------------------------------------------------------------------------
+-- Everything the client tells us about one roster line, keyed by bare name.
+local function readRoster()
+    local count = GetNumGuildMembers()
+    if not count or count == 0 then return nil end
+    local now = GL:Now()
+    local online = {}
+    local roster, total = {}, 0
+    for i = 1, count do
+        local name, rankName, rankIndex, level, _, zone, note, officerNote, isOnline, status, classFile, _, _, isMobile, _, _, guid = GetGuildRosterInfo(i)
+        if GL:IsUsable(name) and type(name) == "string" and name ~= "" then
+            name = GL:ShortName(name)
+            local lastOnline
+            if isOnline then
+                lastOnline = now
+            elseif GetGuildRosterLastOnline then
+                local years, months, days, hours = GetGuildRosterLastOnline(i)
+                if years or months or days or hours then
+                    lastOnline = now - ((((years or 0) * 12 + (months or 0)) * 30.4 + (days or 0)) * 24 + (hours or 0)) * 3600
+                end
+            end
+            roster[name] = {
+                name = name,
+                rank = GL:IsUsable(rankName) and rankName or nil,
+                rankIndex = GL:IsUsable(rankIndex) and rankIndex or nil,
+                level = GL:IsUsable(level) and level or nil,
+                note = GL:IsUsable(note) and note or "",
+                onote = GL:IsUsable(officerNote) and officerNote or "",
+                class = GL:IsUsable(classFile) and classFile or nil,
+                guid = GL:IsUsable(guid) and guid or nil,
+                online = isOnline and true or false,
+                lastOnline = lastOnline,
+                zone = (isOnline and GL:IsUsable(zone) and type(zone) == "string" and zone ~= "") and zone or nil,
+                status = (isOnline and GL:IsUsable(status) and tonumber(status)) or 0,   -- 0 none, 1 AFK, 2 DND
+                mobile = (isOnline and isMobile == true) or nil,
+            }
+            total = total + 1
+        end
+    end
+    if total == 0 then return nil end
+    return roster, total, count
+end
+
+-- Is this roster only part of the guild? Leaves are never recorded from a partial roster: the guild UI's
+-- "show offline" box being off, lines the client hides, or a roster that shrank by more than a tenth
+-- since the last complete scan (a server hiccup looks exactly like a mass exodus). A real shrink is
+-- accepted once it has held for several scans over ten minutes.
+local PARTIAL_ACCEPT_SCANS, PARTIAL_ACCEPT_SECONDS = 3, 600
+local shrinkSince, shrinkScans = nil, 0
+
+local function partialReason(guild, total, count, now)
+    -- The guild panel's "show offline" flag is not consulted: iterating 1..GetNumGuildMembers() returns every
+    -- member whatever the flag says (measured 997/997 with it off), and other addons flip the flag while
+    -- building tooltips (Socialite), which made this look partial every time such a window closed. If rows
+    -- really were hidden, the readable-lines check below would catch it.
+    if total < count then return string.format("%d of %d roster lines readable", total, count) end
+    local last = guild.lastCount
+    if last and total < last * 0.9 then
+        shrinkScans = shrinkScans + 1
+        shrinkSince = shrinkSince or now
+        if shrinkScans >= PARTIAL_ACCEPT_SCANS and (now - shrinkSince) >= PARTIAL_ACCEPT_SECONDS then
+            shrinkSince, shrinkScans = nil, 0
+            return nil   -- held long enough: it really happened
+        end
+        return string.format("roster shrank from %d to %d", last, total)
+    end
+    shrinkSince, shrinkScans = nil, 0
+    return nil
+end
+
+local function canSeeOfficerNotes()
+    if C_GuildInfo and C_GuildInfo.CanViewOfficerNote then return C_GuildInfo.CanViewOfficerNote() end
+    if CanViewOfficerNote then return CanViewOfficerNote() end
+    return false
+end
+
+-- Copies the live fields of a roster line into a saved member record.
+local function updateMember(member, line, now)
+    member.name = line.name
+    member.class = line.class or member.class
+    member.level = line.level or member.level
+    member.rank = line.rank or member.rank
+    member.rankIndex = line.rankIndex or member.rankIndex
+    member.note = line.note
+    if canSeeOfficerNotes() then member.onote = line.onote end
+    member.guid = line.guid or member.guid
+    member.online = line.online
+    member.zone = line.online and line.zone or nil       -- only kept while online
+    member.status = line.online and line.status or nil
+    member.mobile = line.mobile
+    member.lastSeen = now
+    if line.lastOnline then member.lastOnline = line.lastOnline end
+    member.missing = nil
+end
+
+-- Remembers rank names by index (used for the newcomer rank and the Tools page).
+local function noteRanks(guild, roster)
+    for _, line in pairs(roster) do
+        if line.rankIndex and line.rank then guild.ranks[line.rankIndex] = line.rank end
+    end
+end
+
+-- After a join: shout if the name (or an alt of it) is on the ban list; read the note for an alt link.
+local function afterJoin(guild, member, kind)
+    local ban, bannedName = GL:BanFor(guild, member)
+    if ban then
+        GL:Warn(string.format("%s just joined but %s is on the ban list (banned by %s on %s%s).", member.name,
+            bannedName == member.name and "this character" or ("their character " .. bannedName), ban.by or "?", GL:FormatDate(ban.t),
+            (ban.reason and ban.reason ~= "") and (": " .. ban.reason) or ""))
+    end
+    if GL.settings.autoAlts then GL:DetectAlt(guild, member) end
+    -- Optional, like Guild Roster Manager: write the join date into an empty public or officer note.
+    local where = GL.settings.noteJoinDate
+    if (where == "public" or where == "officer") and GL.SetNote then
+        local current = where == "officer" and member.onote or member.note
+        local allowed = where == "officer" and GL.CanEditOfficerNote and GL:CanEditOfficerNote() or (where == "public" and GL.CanEditNote and GL:CanEditNote())
+        if allowed and (current == nil or current == "") then
+            local text = (kind == "rejoin" and "Rejoined " or "Joined ") .. GL:FormatDate(member.joined or GL:Now())
+            pcall(GL.SetNote, GL, member, text, where == "officer")
+        end
+    end
+    -- Welcomes only for joins seen live. The first scan after a login or reload lists everyone who joined
+    -- while you were away; whispering them hours later reads as odd, so those are recorded but not welcomed.
+    if GL.Welcome then GL.Welcome:OnJoin(guild, member, kind or "join", GL.sessionReady == true) end
+end
+
+-- First look at a guild: record everyone, no events. Join dates are unknown; "first seen" is a floor.
+local function seedGuild(guild, roster, now)
+    for name, line in pairs(roster) do
+        local member = { firstSeen = now }
+        updateMember(member, line, now)
+        guild.members[name] = member
+    end
+    noteRanks(guild, roster)
+    if GL.settings.autoAlts then
+        for _, member in pairs(guild.members) do GL:DetectAlt(guild, member) end
+    end
+    guild.seeded = now
+end
+
+-- Compares the saved roster with the live one and records what changed.
+local function diffRoster(guild, roster, now, partial)
+    local members = guild.members
+    local officerNotes = canSeeOfficerNotes()
+    local inactiveAfter = (GL.settings.inactiveDays or 30) * 86400
+    noteRanks(guild, roster)
+
+    -- Name changes: a new name with the guid of a missing member.
+    local guidOf = {}
+    for name, member in pairs(members) do
+        if member.guid and not roster[name] then guidOf[member.guid] = name end
+    end
+    for name, line in pairs(roster) do
+        local oldName = line.guid and guidOf[line.guid]
+        if oldName and not members[name] then
+            local member = members[oldName]
+            members[oldName] = nil
+            members[name] = member
+            updateMember(member, line, now)
+            GL:AddEvent(guild, "rename", { who = name, from = oldName }, now)
+        end
+    end
+
+    -- Changes and joins.
+    for name, line in pairs(roster) do
+        local member = members[name]
+        if member then
+            if line.level and member.level and line.level > member.level then
+                GL:AddEvent(guild, "level", { who = name, from = member.level, level = line.level }, now)
+                if GL.Shout then GL.Shout:OnLevel(guild, name, member.level, line.level, line.online) end
+            end
+            local noteChanged = false
+            if line.rankIndex and member.rankIndex and line.rankIndex ~= member.rankIndex then
+                local kind = line.rankIndex < member.rankIndex and "promote" or "demote"   -- rank 0 is the guild leader
+                GL:AddEvent(guild, kind, { who = name, from = member.rank, to = line.rank }, now)
+                member.promoted, member.promotedSource = now, "scan"
+                GL:Stamp(member, "promoted", now)
+                if kind == "promote" and GL.Shout then GL.Shout:OnPromote(guild, name, line.rank, line.online) end
+            elseif line.rank and member.rank and line.rank ~= member.rank and line.rankIndex == member.rankIndex then
+                GL:AddEvent(guild, "rank", { who = name, from = member.rank, to = line.rank }, now)
+            end
+            if member.note ~= nil and line.note ~= member.note then
+                GL:AddEvent(guild, "note", { who = name, from = member.note, to = line.note }, now)
+                noteChanged = true
+            end
+            if officerNotes and member.onote ~= nil and line.onote ~= member.onote then
+                GL:AddEvent(guild, "onote", { who = name, from = member.onote, to = line.onote }, now)
+                noteChanged = true
+            end
+            if line.online and member.lastOnline and (now - member.lastOnline) >= inactiveAfter and not member.online then
+                local away = (string.gsub(GL:Ago(member.lastOnline, now), " ago$", ""))
+                GL:AddEvent(guild, "back", { who = name, text = away }, now)
+                if GL.Shout then GL.Shout:OnBack(guild, name, away) end
+            end
+            if member.watch and line.online and not member.online then
+                GL:Print(GL:ColoredName(member) .. " is online now (you asked to be told; the Watch button on their card turns this off).")
+            end
+            if (line.online and true or false) ~= (member.online and true or false) and GL.NoteTransition then GL:NoteTransition(guild, name, line.online, now) end
+            updateMember(member, line, now)
+            if noteChanged and GL.settings.autoAlts then GL:DetectAlt(guild, member) end
+        else
+            local former = guild.former[name]
+            local kind = former and "rejoin" or "join"
+            member = former or { firstSeen = now }
+            guild.former[name] = nil
+            updateMember(member, line, now)
+            member.left, member.leftKind = nil, nil
+            member.joined, member.joinedSource = now, "scan"
+            member.promoted, member.promotedSource = nil, nil
+            GL:Stamp(member, "joined", now)
+            if GL.StartFirstWeek then GL:StartFirstWeek(member) end
+            members[name] = member
+            -- Who invited them: your own invite is known at once from the system line; anyone else's comes from
+            -- the game's event log, so the chat line waits a few seconds for it (level and inviter, like GRM's line).
+            local by = inviterFor(name, now) or member.invitedBy
+            if by then member.invitedBy = member.invitedBy or by end
+            local event = GL:AddEvent(guild, kind, { who = name, level = line.level, by = by, hold = not by or nil }, now)
+            if by then
+                GL:Announce(event, guild)
+            else
+                if QueryGuildEventLog then pcall(QueryGuildEventLog) end
+                C_Timer.After(6, function()
+                    if event.hold then
+                        event.hold = nil
+                        if not event.by and member.invitedBy then event.by = member.invitedBy end
+                        GL:Announce(event, guild)
+                    end
+                end)
+            end
+            afterJoin(guild, member, kind)
+        end
+    end
+
+    -- Leaves: only from a complete roster, and only after the member has been missing from several scans in a row.
+    if partial then return end
+    for name, member in pairs(members) do
+        if not roster[name] then
+            member.missing = (member.missing or 0) + 1
+            if member.missing >= LEAVE_CONFIRM_SCANS then
+                members[name] = nil
+                member.missing = nil
+                member.online = false
+                member.left, member.leftKind = now, "leave"
+                guild.former[name] = member
+                GL:AddEvent(guild, "leave", { who = name, level = member.level, from = member.rank, since = member.joined }, now)
+            end
+        end
+    end
+end
+
+-- Game event log -----------------------------------------------------------------------------------
+-- The game keeps its own short list (invite, join, promote, demote, remove, quit) with who did it and
+-- the hour it happened. Each entry is merged once: it fills in the actor on a scan event, sets a join
+-- date for a member seen joining before the ledger existed, or becomes an event of its own.
+local function gameLogTime(now, years, months, days, hours)
+    return now - ((((years or 0) * 12 + (months or 0)) * 30.4 + (days or 0)) * 24 + (hours or 0)) * 3600
+end
+
+local function importGameLog(guild)
+    if not GetNumGuildEvents then return end
+    local count = GetNumGuildEvents()
+    if not count or count == 0 then return end
+    local now = GL:Now()
+    local wasQuiet = GL.quiet
+    GL.quiet = true   -- history is never announced
+    local held = {}   -- joins whose chat line waited for the inviter
+    for i = 1, count do
+        local kind, player1, player2, rank, years, months, days, hours = GetGuildEventInfo(i)
+        if GL:IsUsable(kind) and GL:IsUsable(player1) and type(player1) == "string" then
+            player1 = GL:ShortName(player1)
+            player2 = (GL:IsUsable(player2) and type(player2) == "string") and GL:ShortName(player2) or nil
+            rank = GL:IsUsable(rank) and rank or nil
+            local t = gameLogTime(now, years, months, days, hours)
+            local key = table.concat({ kind, player1, player2 or "", rank or "", tostring(math.floor(t / 3600)) }, "|")
+            if not guild.seen[key] then
+                guild.seen[key] = t
+                if kind == "invite" and player2 then
+                    local event = GL:FindEvent(guild, "join", player2, t, GAME_LOG_WINDOW) or GL:FindEvent(guild, "rejoin", player2, t, GAME_LOG_WINDOW)
+                    if event then
+                        event.by = event.by or player1
+                        local joiner = guild.members[player2]
+                        if joiner then joiner.invitedBy = joiner.invitedBy or player1 end
+                        if event.hold then event.hold = nil; held[#held + 1] = event end
+                    elseif guild.members[player2] then
+                        GL:SetJoinDate(guild, player2, t, "game")
+                        guild.members[player2].invitedBy = guild.members[player2].invitedBy or player1
+                        GL:AddEvent(guild, "join", { who = player2, by = player1, src = "game" }, t)
+                    end
+                elseif kind == "join" then
+                    local event = GL:FindEvent(guild, "join", player1, t, GAME_LOG_WINDOW)
+                    if not event and guild.members[player1] then
+                        GL:SetJoinDate(guild, player1, t, "game")
+                        GL:AddEvent(guild, "join", { who = player1, src = "game" }, t)
+                    end
+                elseif (kind == "promote" or kind == "demote") and player2 then
+                    local event = GL:FindEvent(guild, kind, player2, t, GAME_LOG_WINDOW)
+                    if event then
+                        event.by = event.by or player1
+                    else
+                        GL:AddEvent(guild, kind, { who = player2, by = player1, to = rank, src = "game" }, t)
+                    end
+                    local member = guild.members[player2]
+                    if member and (not member.promoted or t > member.promoted) then GL:SetPromotedDate(guild, player2, t, "game") end
+                elseif kind == "remove" and player2 then
+                    local event = GL:FindEvent(guild, "leave", player2, t, GAME_LOG_WINDOW)
+                    local former = guild.former[player2]
+                    if former then former.leftKind, former.leftBy = "kick", player1 end
+                    if event then
+                        event.k, event.by = "kick", event.by or player1
+                    elseif not guild.members[player2] then
+                        GL:AddEvent(guild, "kick", { who = player2, by = player1, src = "game" }, t)
+                    end
+                elseif kind == "quit" then
+                    local event = GL:FindEvent(guild, "leave", player1, t, GAME_LOG_WINDOW)
+                    if not event and not guild.members[player1] then
+                        GL:AddEvent(guild, "leave", { who = player1, src = "game" }, t)
+                    end
+                end
+            end
+        end
+    end
+    GL.quiet = wasQuiet
+    for _, event in ipairs(held) do GL:Announce(event, guild) end
+    -- Forget old fingerprints.
+    for key, t in pairs(guild.seen) do
+        if now - t > SEEN_KEEP then guild.seen[key] = nil end
+    end
+end
+
+-- Driving it ---------------------------------------------------------------------------------------
+function GL:ProcessRoster()
+    local guild = self:Guild()
+    if not guild then return end
+    local roster, total, count = readRoster()
+    if not roster then return end
+    local now = self:Now()
+    local partial = partialReason(guild, total, count, now)
+    if partial and not guild.seeded then return end   -- never start from half a roster
+    guild.scans = (guild.scans or 0) + 1
+    guild.lastScan = now
+    -- A partial roster is shown on the To-do tab (Officers.lua), not announced in chat: a transient one is
+    -- common (another addon's tooltip, a server hiccup) and the line read as noise.
+    guild.partialScan = partial
+    if not partial then guild.lastCount = total end
+    local wasQuiet = self.quiet
+    if not guild.seeded then
+        self.quiet = true
+        seedGuild(guild, roster, now)
+        self.quiet = wasQuiet
+        self:Print(string.format("started keeping records for %s with %d members. Joins, leaves, promotions and level-ups are recorded from now on.", guild.name, total))
+    else
+        diffRoster(guild, roster, now, partial ~= nil)
+    end
+    if self.ApplySelfGroup then pcall(self.ApplySelfGroup, self, guild) end
+    if self.LearnFromGRM then pcall(self.LearnFromGRM, self, guild) end
+    if self.TickFirstWeek then
+        pcall(self.TickFirstWeek, self, guild, now, lastTick and (now - lastTick) or 0)
+        lastTick = now
+    end
+    if not self.sessionReady then
+        self.sessionReady = true
+        if self.Shout then self.Shout:AfterScan() end
+        if self.settings.anniversaries then pcall(self.CheckAnniversaries, self, guild) end
+        if self.Sync then pcall(self.Sync.Hello, self.Sync, false) end
+    end
+    if self.OnLedgerChanged then self:OnLedgerChanged(guild) end
+end
+
+-- Anniversaries -------------------------------------------------------------------------------------
+-- Once a day, lists join anniversaries and birthdays falling in the next week.
+function GL:Upcoming(guild, days, now)
+    now = now or self:Now()
+    local list = {}
+    for name, member in pairs(guild.members) do
+        if member.joined and (now - member.joined) > 300 * 86400 then
+            local joined = date("*t", member.joined)
+            local until_, year = self:DaysUntil(joined.month, joined.day, now)
+            if until_ <= days and year - joined.year >= 1 then
+                list[#list + 1] = { member = member, kind = "anniversary", days = until_, years = year - joined.year }
+            end
+        end
+        if member.birthday and member.birthday.m then
+            local until_ = self:DaysUntil(member.birthday.m, member.birthday.d, now)
+            if until_ <= days then list[#list + 1] = { member = member, kind = "birthday", days = until_ } end
+        end
+    end
+    table.sort(list, function(a, b) if a.days ~= b.days then return a.days < b.days end return a.member.name < b.member.name end)
+    return list
+end
+
+function GL:CheckAnniversaries(guild)
+    local today = date("%Y-%m-%d", self:Now())
+    if guild.anniversaryDay == today then return end
+    guild.anniversaryDay = today
+    local list = self:Upcoming(guild, 7)
+    if #list == 0 then return end
+    local parts = {}
+    for _, item in ipairs(list) do
+        local when = item.days == 0 and "today" or item.days == 1 and "tomorrow" or ("in " .. item.days .. " days")
+        if item.kind == "anniversary" then
+            parts[#parts + 1] = string.format("%s: %d %s in the guild %s", self:ColoredName(item.member), item.years, item.years == 1 and "year" or "years", when)
+        else
+            parts[#parts + 1] = string.format("%s: birthday %s", self:ColoredName(item.member), when)
+        end
+    end
+    self:Print("coming up: " .. table.concat(parts, "; ") .. ".")
+end
+
+-- Asks the game for a fresh roster; the result arrives as GUILD_ROSTER_UPDATE.
+function GL:RequestScan(force)
+    if not IsInGuild() then return end
+    local now = GetTime()
+    if not force and now - lastRequest < SCAN_INTERVAL then
+        pendingScan = true
+        return
+    end
+    lastRequest = now
+    pendingScan = false
+    if C_GuildInfo and C_GuildInfo.GuildRoster then C_GuildInfo.GuildRoster() elseif GuildRoster then GuildRoster() end
+    if now - lastGameLogQuery > SCAN_INTERVAL and QueryGuildEventLog then
+        lastGameLogQuery = now
+        QueryGuildEventLog()
+    end
+end
+
+frame:RegisterEvent("ADDON_LOADED")
+frame:RegisterEvent("PLAYER_ENTERING_WORLD")
+frame:RegisterEvent("GUILD_ROSTER_UPDATE")
+frame:RegisterEvent("GUILD_EVENT_LOG_UPDATE")
+frame:RegisterEvent("PLAYER_GUILD_UPDATE")
+frame:RegisterEvent("CHAT_MSG_SYSTEM")
+frame:SetScript("OnEvent", function(self, event, arg1)
+    if event == "CHAT_MSG_SYSTEM" then
+        noteInvite(arg1)
+    elseif event == "ADDON_LOADED" then
+        if arg1 == ADDON_NAME then
+            GL:InitDB()
+            self:UnregisterEvent("ADDON_LOADED")
+        end
+    elseif event == "PLAYER_ENTERING_WORLD" or event == "PLAYER_GUILD_UPDATE" then
+        C_Timer.After(5, function() GL:RequestScan(true) end)
+    elseif event == "GUILD_ROSTER_UPDATE" then
+        if GL.db then
+            local ok, err = pcall(GL.ProcessRoster, GL)
+            if not ok then GL:Print("roster scan failed: " .. tostring(err)) end
+        end
+    elseif event == "GUILD_EVENT_LOG_UPDATE" then
+        local guild = GL.db and GL:Guild()
+        if guild and guild.seeded then
+            local ok, err = pcall(importGameLog, guild)
+            if not ok then GL:Print("event log import failed: " .. tostring(err)) end
+            if GL.OnLedgerChanged then GL:OnLedgerChanged(guild) end
+        end
+    end
+end)
+
+-- The roster only changes while someone is online, and the game sends GUILD_ROSTER_UPDATE on its own
+-- whenever it does; a slow heartbeat keeps the last-online times fresh and catches anything missed.
+local heartbeat = 0
+frame:SetScript("OnUpdate", function(self, elapsed)
+    heartbeat = heartbeat + elapsed
+    if heartbeat < 60 then return end
+    heartbeat = 0
+    if pendingScan or (GetTime() - lastRequest) > 300 then GL:RequestScan(false) end
+end)

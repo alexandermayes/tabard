@@ -1,0 +1,32 @@
+## Interface: 16001
+## Title: Tabard
+## Notes: A dated record of your guild: who joined, left, was promoted or leveled, alts and mains, a ban list, officer notes, a to-do list, a play-now finder, new members' first week, welcome whispers, raid attendance, export, and sharing between officers. Built for WoW Forever with the stock UI.
+## Author: Zev
+## Version: 1.0.0
+## SavedVariables: TabardDB
+## OptionalDeps: GuildLedger
+## IconTexture: Interface\AddOns\Tabard\logo
+## X-Category: Guild
+## X-License: MIT
+
+Libs\LibStub\LibStub.lua
+Libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
+Libs\LibDataBroker-1.1\LibDataBroker-1.1.lua
+Libs\LibDBIcon-1.0\LibDBIcon-1.0.lua
+
+Core.lua
+Records.lua
+Scan.lua
+Sync.lua
+Tools.lua
+Import.lua
+Welcome.lua
+Shout.lua
+Hints.lua
+Officers.lua
+Alts.lua
+Newcomers.lua
+Raids.lua
+Keep.lua
+Summary.lua
+UI.lua
