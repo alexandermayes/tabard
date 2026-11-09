@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.1
+
+- Welcome whispers no longer add a sentence about the new member's class ("Rogues are handy for us..."). It read oddly to the people getting it. The stock lines now point people to guild chat for groups instead, and saved lines that still contain `{classbit}` get nothing in its place.
+
 ## 1.0.0
 
 First public release.
