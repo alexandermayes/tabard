@@ -1,0 +1,16 @@
+name: Idea
+description: Suggest a feature or a change
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: What would help
+      description: What you are trying to do for your guild, and what gets in the way today.
+    validations:
+      required: true
+  - type: textarea
+    id: picture
+    attributes:
+      label: How you picture it
+      description: Optional. Where it would live in the window and what it would show.
