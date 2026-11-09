@@ -11,7 +11,7 @@
 -- /tabard welcome test         whisper yourself the next line (proves the whole path)
 -- /tabard welcome preview NAME show what NAME would get, without sending
 -- /tabard welcome list         show the rotation
--- /tabard welcome add TEXT     add a line ({name} {class} {level} {me} {classbit} are replaced)
+-- /tabard welcome add TEXT     add a line ({name} {class} {level} {me} are replaced)
 -- /tabard welcome remove N     remove line N
 -- /tabard welcome reset        restore the stock lines
 -- /tabard welcome delay N      seconds to wait after the join (default 8)
@@ -23,38 +23,23 @@ local Welcome = {}
 GL.Welcome = Welcome
 
 -- Stock lines: first person, statements only, no questions, nothing guild-specific. Every one must stay under
--- 255 bytes after the placeholders are filled in; the composer drops {classbit} first and then trims if a long
--- name pushes it over. Guilds add their own lines (Discord link, raid nights) in Settings.
+-- 255 bytes after the placeholders are filled in; the composer trims if a long name pushes it over.
+-- Guilds add their own lines (Discord link, raid nights) in Settings.
 local DEFAULT_LINES = {
-    "Hey {name}, welcome to the guild. I'm {me}, say hi in guild chat whenever. {classbit}",
-    "Welcome in {name}. If you need anything, ask in guild chat or whisper me, I'm {me}. {classbit}",
-    "Hey {name}, glad you joined. People are usually around for dungeons, just ask. {classbit}",
+    "Hey {name}, welcome to the guild. I'm {me}, say hi in guild chat whenever.",
+    "Welcome in {name}. If you need anything, ask in guild chat or whisper me, I'm {me}.",
+    "Hey {name}, glad you joined. People are usually around for dungeons, just ask.",
     "Welcome {name}. Level {level} {class}, nice. Shout in guild chat when you want a group.",
-    "Hey {name}, {me} here. Welcome aboard, make yourself at home. {classbit}",
-    "{name}, welcome to the guild. Nothing you have to do, just hang out and play. {classbit}",
-    "Welcome in {name}. Guild chat is the easy way to find people to play with. {classbit}",
-    "Hey {name}, good to have you. Ask in guild chat if you have questions, someone will help. {classbit}",
+    "Hey {name}, {me} here. Welcome aboard, ask in guild chat whenever you want a group.",
+    "{name}, welcome to the guild. Nothing you have to do, just hang out and play.",
+    "Welcome in {name}. Guild chat is the easy way to find people to play with.",
+    "Hey {name}, good to have you. Ask in guild chat if you have questions, someone will help.",
 }
 
 local DEFAULT_BACK_LINES = {
     "Welcome back {name}. Good to have you in the guild again.",
     "Hey {name}, welcome back. Say hi in guild chat when you're on.",
     "{name}, welcome back in. I'm {me} if you need anything.",
-}
-
--- One extra sentence by class, dropped into {classbit}. Kept plain, these are the first thing that
--- gets cut when a line runs long. None of them assumes a role (tank, healer): nobody likes being told
--- what they are going to play in their first minute.
-local CLASS_BITS = {
-    WARRIOR = "Warriors are always in demand for dungeon runs, you'll get invites.",
-    PALADIN = "Pallies fit into any dungeon group so you'll get invites.",
-    HUNTER = "Hunters slot into any group, you'll have no trouble finding runs.",
-    ROGUE = "Rogues are handy for us, lockpicking and stealth runs come up a lot.",
-    PRIEST = "Priests get snapped up for dungeon runs, you'll have groups fast.",
-    SHAMAN = "Shamans are always welcome in groups here, totems make everyone's life easier.",
-    MAGE = "Mages always get groups, water and ports go a long way.",
-    WARLOCK = "Warlocks make life easier, summons save everyone time.",
-    DRUID = "Druids fit into any group, you'll get invites fast.",
 }
 
 local CLASS_NAMES = {
@@ -107,18 +92,15 @@ end
 function Welcome:Compose(template, ctx)
     local classFile = ctx.class and string.upper(ctx.class) or nil
     local className = classFile and CLASS_NAMES[classFile] or "adventurer"
-    local classbit = classFile and CLASS_BITS[classFile] or ""
-    local function fill(withClassbit)
-        local text = template
-        text = string.gsub(text, "{name}", ctx.name or "there")
-        text = string.gsub(text, "{class}", className)
-        text = string.gsub(text, "{level}", tostring(ctx.level or "?"))
-        text = string.gsub(text, "{me}", ctx.me or GL:PlayerFirstName())
-        text = string.gsub(text, "{classbit}", withClassbit and classbit or "")
-        return tidy(text)
-    end
-    local text = fill(true)
-    if #text > MAX_BYTES then text = fill(false) end
+    local text = template
+    text = string.gsub(text, "{name}", ctx.name or "there")
+    text = string.gsub(text, "{class}", className)
+    text = string.gsub(text, "{level}", tostring(ctx.level or "?"))
+    text = string.gsub(text, "{me}", ctx.me or GL:PlayerFirstName())
+    -- 1.0.0 added a sentence per class here ("Rogues are handy for us..."). It read oddly, so it is gone;
+    -- saved lines that still carry the placeholder get nothing in its place.
+    text = string.gsub(text, "{classbit}", "")
+    text = tidy(text)
     if #text > MAX_BYTES then text = string.sub(text, 1, MAX_BYTES - 1) end
     return text
 end
