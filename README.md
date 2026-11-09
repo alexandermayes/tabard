@@ -9,7 +9,7 @@ usually keeps in their head, and it shares that knowledge between officers autom
 ## What it does
 
 - **Overview**: five big numbers, what changed since your last login, what happened in the last 30 days, a "needs attention" list, upcoming
-  anniversaries and birthdays, class and level breakdowns, and sharing status. Every number is a button.
+  anniversaries and birthdays, class and level breakdowns (click a class to see its levels and who leads it), and sharing status. Every number is a button.
 - **To-do**: trial reviews due, leaves of absence that ended, banned characters in the guild, alts whose
   main left, promotions due, members back from a break, and requests members whisper you (`!main`,
   `!bday`, `!loa`). Mark an item handled and it is handled for every officer running the addon.

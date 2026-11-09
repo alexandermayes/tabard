@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.0
+
+- Overview: click a class in the Classes panel to see that class's level spread in the Levels panel, drawn in the class colour, with the highest-level player named ("highest 41: Turik"). Click the class again, or "all classes" beside the Levels title, to go back to the whole guild.
+- Hovering a class shows how many are in the guild, their average level and the top five by level.
+- Every level bar is now a button: it opens the Members list for that level range (and the picked class, if any), highest level first. The filter button shows what is applied ("Mage, 41-50"); choosing any filter from it clears that.
+
 ## 1.0.1
 
 - Welcome whispers no longer add a sentence about the new member's class ("Rogues are handy for us..."). It read oddly to the people getting it. The stock lines now point people to guild chat for groups instead, and saved lines that still contain `{classbit}` get nothing in its place.

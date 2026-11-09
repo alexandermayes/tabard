@@ -96,6 +96,11 @@ local currentPage
 -- Page state. Declared up here so every page (and the Overview's shortcuts) can read and set it.
 local logSearch = ""
 local memberSearch, memberFilter = "", "all"
+-- A class and/or level range on top of the member filter, set from the Overview's class and level bars:
+-- { class = "MAGE", lo = 41, hi = 50 }; nil = no extra limit. Picking a filter from the menu clears it.
+local memberScope = nil
+local memberState = { sort = "name", desc = false }   -- member list sort
+local overviewClass = nil   -- the class picked on the Overview's class bars; the Levels panel shows only that class
 local formerSearch = ""
 local exportWhat = "members"
 local todoShowHandled = false
@@ -677,8 +682,14 @@ end
 
 -- A labelled horizontal bar: label, count, then a track with a coloured fill.
 local function barRow(parent, labelWidth)
-    local row = CreateFrame("Frame", nil, parent)
+    local row = CreateFrame("Button", nil, parent)
     row:SetHeight(14)
+    row:EnableMouse(false)   -- only bars given a click (SetClick) take the mouse
+    row.clickReady = false
+    row.selectedBg = solid(row, "BACKGROUND", 1, 1, 1, 0.1)
+    row.selectedBg:SetPoint("TOPLEFT", row, "TOPLEFT", -4, 1)
+    row.selectedBg:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", 4, -1)
+    row.selectedBg:Hide()
     row.icon = row:CreateTexture(nil, "ARTWORK")
     row.icon:SetSize(12, 12)
     row.icon:SetPoint("LEFT", row, "LEFT", 0, 0)
@@ -719,6 +730,36 @@ local function barRow(parent, labelWidth)
         row.fill:SetWidth(width)
         row.fill:SetColorTexture(r or 1, g or 1, b or 1, 0.85)
         row:Show()
+    end
+    -- Makes the bar a button. tooltip: a function returning tooltipLines() lines, read on hover.
+    function row.SetClick(onClick, tooltip)
+        row.onClick, row.tooltip = onClick, tooltip
+        if row.clickReady then return end
+        row.clickReady = true
+        row:EnableMouse(true)
+        row:SetHighlightTexture(SOLID)
+        local highlight = row:GetHighlightTexture()
+        if highlight then
+            highlight:ClearAllPoints()
+            highlight:SetPoint("TOPLEFT", row, "TOPLEFT", -4, 1)
+            highlight:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", 4, -1)
+            highlight:SetVertexColor(1, 1, 1, 0.06)
+        end
+        row:SetScript("OnClick", function(self)
+            if not self.onClick then return end
+            if PlaySound and SOUNDKIT and SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON then PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON) end
+            self.onClick()
+        end)
+        row:SetScript("OnEnter", function(self)
+            local lines = self.tooltip and self.tooltip()
+            if lines then tooltipLines(self, lines) end
+        end)
+        row:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+    end
+    -- selected: true = marked, false = dimmed (another bar is picked), nil = normal.
+    function row.SetSelected(selected)
+        if selected then row.selectedBg:Show() else row.selectedBg:Hide() end
+        row:SetAlpha(selected == false and 0.5 or 1)
     end
     return row
 end
@@ -1296,9 +1337,29 @@ local MEMBER_FILTER_LABELS = { all = "Everyone", online = "Online now", inactive
 
 local function goMembers(filter)
     memberFilter = filter or "all"
+    memberScope = nil
     memberSearch = ""
     if pages.members and pages.members.search then pages.members.search:SetText("") end
     showPage("members")
+end
+
+-- Opens the member list limited to a class and/or level range, highest level first.
+-- scope = { class = "MAGE", lo = 41, hi = 50 } (each part optional).
+local function goMembersScope(scope)
+    memberFilter, memberScope, memberSearch = "all", scope, ""
+    memberState.sort, memberState.desc = "level", true
+    if pages.members and pages.members.search then pages.members.search:SetText("") end
+    showPage("members")
+end
+
+-- "Mage, 41-50", "Mage", "Level 51+" for the member filter button.
+local function scopeLabel(scope)
+    local range
+    if scope.lo and scope.hi then range = scope.lo .. "-" .. scope.hi
+    elseif scope.hi then range = "1-" .. scope.hi
+    elseif scope.lo then range = scope.lo .. "+" end
+    if scope.class then return GL:ClassName(scope.class) .. (range and (", " .. range) or "") end
+    return range and ("Level " .. range) or "Everyone"
 end
 
 -- Shows only the given kinds in the log (nil = everything), then opens it.
@@ -1509,7 +1570,6 @@ local function buildLogPage()
 end
 
 -- Members page --------------------------------------------------------------------------------------------
-local memberState = { sort = "name", desc = false }
 local MEMBER_COLUMNS = {
     { key = "icon", label = "", width = 22, icon = true },
     { key = "name", label = "Name", width = 150 },
@@ -1549,6 +1609,12 @@ local function memberRows(guild)
         elseif memberFilter == "ungrouped" then keep = GL:GroupOf(guild, member) == nil
         elseif memberFilter == "noted" then keep = member.custom ~= nil
         elseif memberFilter == "banned" then keep = GL:BanFor(guild, member) ~= nil end
+        if keep and memberScope then
+            local level = member.level or 0
+            if memberScope.class and member.class ~= memberScope.class then keep = false
+            elseif memberScope.lo and level < memberScope.lo then keep = false
+            elseif memberScope.hi and level > memberScope.hi then keep = false end
+        end
         if keep and needle ~= "" then
             keep = string.find(string.lower(name), needle, 1, true) ~= nil or string.find(string.lower(member.rank or ""), needle, 1, true) ~= nil
                 or string.find(string.lower(member.note or ""), needle, 1, true) ~= nil or string.find(string.lower(member.custom or ""), needle, 1, true) ~= nil
@@ -1600,8 +1666,8 @@ local function buildMembersPage()
     page.search = createSearchBox(page, function(text) memberSearch = text GL:RefreshWindow() end)
     page.search:SetPoint("TOPLEFT", page, "TOPLEFT", 72, -7)
 
-    local function choose(value) return function() memberFilter = value GL:RefreshWindow() end end
-    local function chosen(value) return function() return memberFilter == value end end
+    local function choose(value) return function() memberFilter = value memberScope = nil GL:RefreshWindow() end end
+    local function chosen(value) return function() return memberScope == nil and memberFilter == value end end
     page.filter = createFilter(page, "Everyone", {
         { text = "Everyone", isChecked = chosen("all"), toggle = choose("all") },
         { text = "Online now", isChecked = chosen("online"), toggle = choose("online") },
@@ -1673,7 +1739,8 @@ local function buildMembersPage()
         end)
         page.table.SetRows(rows)
         page.table.UpdateHeaders()
-        page.filter:SetLabel(memberFilter == "inactive" and ("Inactive " .. (GL.settings.kickDays or 60) .. "+ days") or MEMBER_FILTER_LABELS[memberFilter] or "Everyone")
+        page.filter:SetLabel(memberScope and scopeLabel(memberScope)
+            or memberFilter == "inactive" and ("Inactive " .. (GL.settings.kickDays or 60) .. "+ days") or MEMBER_FILTER_LABELS[memberFilter] or "Everyone")
         if total == 0 then
             showEmpty(page, IsInGuild() and "No members recorded yet; the roster is read a few seconds after you log in." or "You are not in a guild.")
         elseif #rows == 0 then
@@ -2419,6 +2486,8 @@ end
 -- Overview page ---------------------------------------------------------------------------------------------------------
 -- A launchpad: five big numbers across the top, then "last 30 days", "needs attention", "coming up" on the left
 -- and class / level bars plus the sharing status on the right. Every number and line opens the page behind it.
+-- A class bar narrows the Levels panel to that class (with its leader); a level bar opens the member list for that
+-- range, highest level first.
 local function buildOverviewPage()
     local page = createPage("overview")
     page.body:Hide()
@@ -2546,6 +2615,19 @@ local function buildOverviewPage()
         bar:SetPoint("RIGHT", page.levels.body, "RIGHT", 0, 0)
         page.levels.bars[i] = bar
     end
+    -- "all classes" beside the title while one class is picked on the class bars.
+    local clear = CreateFrame("Button", nil, page.levels)
+    clear:SetSize(64, 16)
+    clear:SetPoint("LEFT", page.levels.title, "RIGHT", 8, 0)
+    clear.text = clear:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    clear.text:SetPoint("LEFT", clear, "LEFT", 0, 0)
+    clear.text:SetText("all classes")
+    clear.text:SetTextColor(0.62, 0.62, 0.62)
+    clear:SetScript("OnClick", function() overviewClass = nil GL:RefreshWindow() end)
+    clear:SetScript("OnEnter", function(self) self.text:SetTextColor(1, 1, 1) tooltipLines(self, { { "Every class" }, { "Shows the levels of the whole guild again.", 0.62, 0.62, 0.62 } }) end)
+    clear:SetScript("OnLeave", function(self) self.text:SetTextColor(0.62, 0.62, 0.62) if GameTooltip then GameTooltip:Hide() end end)
+    clear:Hide()
+    page.levels.clear = clear
 
     local sharingTop = levelsTop - levelsHeight - GAP
     page.sharing = section(page, "Sharing", rightX, sharingTop, rightWidth, -bottom - (-sharingTop), inset)
@@ -2573,7 +2655,7 @@ local function buildOverviewPage()
         local kickDays = GL.settings.kickDays or 60
         local kickAfter = kickDays * 86400
         local members, online, dated, alts, mains, inactive, levelSum, maxLevel, ungrouped = 0, 0, 0, 0, 0, 0, 0, 0, 0
-        local classes, brackets = {}, { 0, 0, 0, 0, 0, 0 }
+        local classStats, brackets = {}, { 0, 0, 0, 0, 0, 0 }   -- classStats[classFile] = { count, sum, brackets, members }
         local bannedInGuild = 0
         for name, member in pairs(guild.members) do
             members = members + 1
@@ -2587,7 +2669,17 @@ local function buildOverviewPage()
             if level > maxLevel then maxLevel = level end
             local bracket = math.max(1, math.min(6, math.floor((level - 1) / 10) + 1))
             brackets[bracket] = brackets[bracket] + 1
-            if member.class then classes[member.class] = (classes[member.class] or 0) + 1 end
+            if member.class then
+                local stat = classStats[member.class]
+                if not stat then
+                    stat = { count = 0, sum = 0, brackets = { 0, 0, 0, 0, 0, 0 }, members = {} }
+                    classStats[member.class] = stat
+                end
+                stat.count = stat.count + 1
+                stat.sum = stat.sum + level
+                stat.brackets[bracket] = stat.brackets[bracket] + 1
+                stat.members[#stat.members + 1] = member
+            end
         end
         local joins, leaves, levelsUp, promotions = 0, 0, 0, 0
         for i = #guild.events, 1, -1 do
@@ -2720,33 +2812,88 @@ local function buildOverviewPage()
         if #upcoming == 0 then page.upcoming.none:Show() else page.upcoming.none:Hide() end
         page.upcoming.aside:SetText(#upcoming > #page.upcoming.rows and ("first " .. #page.upcoming.rows .. " of " .. #upcoming) or "next 30 days")
 
-        -- Classes.
+        -- Classes. A click picks that class for the Levels panel below; a second click shows every class again.
+        local function byLevel(a, b)
+            if (a.level or 0) ~= (b.level or 0) then return (a.level or 0) > (b.level or 0) end
+            return string.lower(a.name or "") < string.lower(b.name or "")
+        end
         local classList = {}
-        for classFile, count in pairs(classes) do classList[#classList + 1] = { classFile = classFile, count = count } end
+        for classFile, stat in pairs(classStats) do
+            table.sort(stat.members, byLevel)
+            classList[#classList + 1] = { classFile = classFile, count = stat.count, stat = stat }
+        end
+        if overviewClass and not classStats[overviewClass] then overviewClass = nil end   -- the last one left the guild
         table.sort(classList, function(a, b) if a.count ~= b.count then return a.count > b.count end return a.classFile < b.classFile end)
         local most = classList[1] and classList[1].count or 1
         for i, bar in ipairs(page.classes.bars) do
             local item = classList[i]
             if item then
-                local r, g, b = GL:ClassColor(item.classFile)
-                local coords = CLASS_ICON_TCOORDS and CLASS_ICON_TCOORDS[item.classFile]
+                local classFile, stat = item.classFile, item.stat
+                local r, g, b = GL:ClassColor(classFile)
+                local coords = CLASS_ICON_TCOORDS and CLASS_ICON_TCOORDS[classFile]
                 bar.SetIcon(coords and CLASS_CIRCLES or nil, coords)
-                bar.Set(GL:ClassName(item.classFile), item.count, item.count / most, r, g, b)
+                bar.Set(GL:ClassName(classFile), item.count, item.count / most, r, g, b)
+                local selected = nil
+                if overviewClass then selected = overviewClass == classFile end
+                bar.SetSelected(selected)
+                bar.SetClick(function()
+                    overviewClass = (overviewClass ~= classFile) and classFile or nil
+                    GL:RefreshWindow()
+                end, function()
+                    local lines = { { GL:ClassName(classFile), r, g, b },
+                        { item.count .. " in the guild, average level " .. math.floor(stat.sum / math.max(1, stat.count) + 0.5), 1, 1, 1 } }
+                    for rank = 1, math.min(5, #stat.members) do
+                        local member = stat.members[rank]
+                        lines[#lines + 1] = { rank .. ". " .. plain(member.name) .. "  " .. ((member.level or 0) > 0 and tostring(member.level) or "?"), 0.85, 0.85, 0.85 }
+                    end
+                    lines[#lines + 1] = { overviewClass == classFile and "Click again to show every class." or "Click to see their levels below.", 0.62, 0.62, 0.62 }
+                    return lines
+                end)
             else
                 bar:Hide()
             end
         end
         page.classes.aside:SetText(#classList > 0 and (#classList .. " played") or "")
 
-        -- Levels.
+        -- Levels: the whole guild, or only the class picked above. Each bar opens the member list for its range.
         local names = { "1-10", "11-20", "21-30", "31-40", "41-50", "51-60" }
+        local ranges = { { nil, 10 }, { 11, 20 }, { 21, 30 }, { 31, 40 }, { 41, 50 }, { 51, nil } }
+        local picked = overviewClass and classStats[overviewClass]
+        local counts = picked and picked.brackets or brackets
+        local pickedClass = picked and overviewClass or nil
+        local cr, cg, cb, hex = GL:ClassColor(pickedClass)
         local biggest = 1
-        for i = 1, 6 do if brackets[i] > biggest then biggest = brackets[i] end end
+        for i = 1, 6 do if counts[i] > biggest then biggest = counts[i] end end
         for i, bar in ipairs(page.levels.bars) do
-            local shade = 0.45 + 0.55 * (i - 1) / 5
-            bar.Set(names[i], brackets[i], brackets[i] / biggest, 0.4 + 0.2 * (1 - shade), 0.55 + 0.25 * shade, 1)
+            local count = counts[i]
+            if picked then
+                bar.Set(names[i], count, count / biggest, cr, cg, cb)
+            else
+                local shade = 0.45 + 0.55 * (i - 1) / 5
+                bar.Set(names[i], count, count / biggest, 0.4 + 0.2 * (1 - shade), 0.55 + 0.25 * shade, 1)
+            end
+            local lo, hi = ranges[i][1], ranges[i][2]
+            bar.SetClick(function() goMembersScope({ class = pickedClass, lo = lo, hi = hi }) end, function()
+                local who = pickedClass and (GL:ClassName(pickedClass) .. ", level ") or "Level "
+                return { { who .. names[i] }, { plural(count, "character") .. ". Click to list them, highest level first.", 0.62, 0.62, 0.62 } }
+            end)
         end
-        page.levels.aside:SetText(members > 0 and ("average " .. math.floor(levelSum / members + 0.5) .. ", highest " .. maxLevel) or "")
+        if picked then
+            page.levels.title:SetText("|c" .. hex .. GL:ClassName(pickedClass) .. "|r levels")
+            page.levels.clear:Show()
+            -- The leader by first name, with how many more share that level.
+            local top = picked.members[1]
+            local tied = 0
+            for i = 2, #picked.members do
+                if (picked.members[i].level or 0) == (top.level or 0) then tied = tied + 1 else break end
+            end
+            local first = string.match(plain(top.name), "^(%S+)") or plain(top.name)
+            page.levels.aside:SetText("highest " .. tostring(top.level or 0) .. ": " .. first .. (tied > 0 and (" +" .. tied) or ""))
+        else
+            page.levels.title:SetText("Levels")
+            page.levels.clear:Hide()
+            page.levels.aside:SetText(members > 0 and ("average " .. math.floor(levelSum / members + 0.5) .. ", highest " .. maxLevel) or "")
+        end
 
         -- Sharing.
         local lines = {}
