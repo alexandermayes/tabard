@@ -53,11 +53,16 @@ strikes and handled items through addon messages. Only members at or above the r
 trusted. Nothing is announced on their behalf. The hello also carries the version, so when a guildie runs a
 newer Tabard you get one chat line saying it is time to update in the CurseForge app.
 
+After the hello comes a line of usage counts: how often the window was opened, which pages, member cards and
+slash commands, and which features are on. No names, notes or chat. `/tabard users` shows what the other
+Tabard users in the guild use, `/tabard usage` shows your own line (ready to copy), and one checkbox in
+Settings stops sending it.
+
 ## Slash commands
 
 `/tabard` opens the window. `/tabard scan`, `/tabard sync`, `/tabard status`, `/tabard import`,
-`/tabard todo`, `/tabard raid`, `/tabard backup`, `/tabard restore`, `/tabard welcome` and `/tabard nick` do what
-they say; the window has the same controls.
+`/tabard todo`, `/tabard raid`, `/tabard backup`, `/tabard restore`, `/tabard welcome`, `/tabard nick`,
+`/tabard users` and `/tabard usage` do what they say; the window has the same controls.
 
 ## Coming from Guild Roster Manager
 
