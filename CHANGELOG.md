@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.1
+
+- Level shoutouts no longer call 30 "halfway" or 20 "a third of the way". XP per level keeps growing, so 30 is half the levels but far less than half the XP to 60 (by the classic XP table, XP halfway is around level 48). The new 30 line says exactly that: "halfway in levels, nowhere near it in xp".
+
 ## 1.1.0
 
 - Overview: click a class in the Classes panel to see that class's level spread in the Levels panel, drawn in the class colour, with the highest-level player named ("highest 41: Turik"). Click the class again, or "all classes" beside the Levels title, to go back to the whole guild.

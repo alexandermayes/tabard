@@ -23,14 +23,14 @@ local LINES = {
     [20] = {
         "grats on 20 {name}. past the part where most people quit",
         "{name} hit 20. SM runs are coming, ask in gchat",
-        "20 for {name}, a third of the way there",
+        "20 for {name}. wailing caverns and SFK are right there",
         "{name} is 20, keep it rolling",
     },
     [30] = {
-        "{name} hit 30, halfway",
+        "{name} hit 30. halfway in levels, nowhere near it in xp",
         "grats on 30 {name}. SM is about to be your whole life for a bit",
         "30 for {name}. the long middle starts now, we run dungeons through it",
-        "{name} is 30. halfway there, the fun dungeons start showing up",
+        "{name} is 30. the fun dungeons start showing up",
     },
     [40] = {
         "{name} hit 40, go buy the mount",
