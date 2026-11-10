@@ -106,7 +106,7 @@ local exportWhat = "members"
 local todoShowHandled = false
 
 -- Forward declarations (defined further down).
-local openCard, showPage
+local openCard, showPage, cardAdvance
 
 -- Small helpers ----------------------------------------------------------------------------------------
 local function plain(text)
@@ -669,15 +669,19 @@ local function statTile(parent, caption, accent, onClick, hint, icon)
     tile.accent = solid(tile, "ARTWORK", r, g, b, 0.85)
     tile.accent:SetPoint("TOPLEFT", 1, -1) tile.accent:SetPoint("TOPRIGHT", -1, -1) tile.accent:SetHeight(2)
     tile.icon = tile:CreateTexture(nil, "ARTWORK")
-    tile.icon:SetSize(22, 22)
+    tile.icon:SetSize(20, 20)
     tile.icon:SetPoint("TOPRIGHT", tile, "TOPRIGHT", -8, -8)
     tile.icon:SetAlpha(0.9)
     setIcon(tile.icon, icon, nil, { r, g, b })
     tile.number = tile:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
     tile.number:SetPoint("TOPLEFT", tile, "TOPLEFT", 10, -9)
     tile.number:SetTextColor(1, 1, 1)
+    -- The detail ("in Big Yikes", "186 of 198") stops short of the icon and truncates rather than run under it.
     tile.small = tile:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     tile.small:SetPoint("BOTTOMLEFT", tile.number, "BOTTOMRIGHT", 4, 3)
+    tile.small:SetPoint("RIGHT", tile.icon, "LEFT", -4, 0)
+    tile.small:SetJustifyH("LEFT")
+    tile.small:SetWordWrap(false)
     tile.small:SetTextColor(0.62, 0.62, 0.62)
     tile.caption = tile:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     tile.caption:SetPoint("BOTTOMLEFT", tile, "BOTTOMLEFT", 10, 8)
@@ -1302,8 +1306,9 @@ local function pickMainFor(member)
         local guild = GL:Guild()
         if not guild then return end
         local realMain = GL:MainOf(guild, main) or main
+        local finish = cardAdvance(member)
         if realMain == member then GL:SetMain(guild, member, "user") else GL:LinkAlt(guild, member, realMain, "user") end
-        GL:RefreshWindow()
+        finish()
     end, member)
 end
 
@@ -1314,8 +1319,9 @@ local function pickAltFor(member)
         local guild = GL:Guild()
         if not guild then return end
         local main = GL:IsAlt(guild, member) and GL:MainOf(guild, member) or member
+        local finish = cardAdvance(member)
         GL:LinkAlt(guild, alt, main, "user")
-        GL:RefreshWindow()
+        finish()
     end, member)
 end
 
@@ -1724,6 +1730,24 @@ local function buildMembersPage()
     page.filter:SetPoint("RIGHT", page, "TOPRIGHT", -10, -TOOLBAR_HEIGHT / 2)
     page.count:SetPoint("RIGHT", page.filter, "LEFT", -10, 0)
 
+    -- With "No main or alt set" showing: everyone listed becomes a main of their own in one go, for when the
+    -- list is long and most of them really are one-character members. Real alts can still be linked afterwards.
+    page.massMain = makeButton(page, "Make all mains", 110, function()
+        local guild, rows = GL:Guild(), page.rows or {}
+        if not guild or #rows == 0 then return end
+        confirm(string.format("Make all %d of these mains? Each starts a group of their own and stops counting as unsorted. Anyone who is really an alt can still be linked from their card.", #rows), function()
+            local done = 0
+            for _, row in ipairs(rows) do
+                if GL:GroupOf(guild, row.member) == nil and GL:SetMain(guild, row.member, "user") then done = done + 1 end
+            end
+            GL:Print(plural(done, "member") .. " made mains.")
+            GL:RefreshWindow()
+        end)
+    end)
+    page.massMain:SetPoint("RIGHT", page.count, "LEFT", -10, 0)
+    page.massMain:Hide()
+    explain(page.massMain, "Everyone in this list becomes a main of their own group, in one go. Use it when most of them are one-character members; link the real alts from their cards afterwards.")
+
     page.table = createTable(page.body, MEMBER_COLUMNS, memberState,
         function(key, data)
             local member = data.member
@@ -1776,6 +1800,8 @@ local function buildMembersPage()
         end)
         page.table.SetRows(rows)
         page.table.UpdateHeaders()
+        page.rows = rows   -- in the order shown, for the card to walk (cardAdvance) and the mass action
+        if memberScope == nil and memberFilter == "ungrouped" and #rows > 0 then page.massMain:Show() else page.massMain:Hide() end
         page.filter:SetLabel(memberScope and scopeLabel(memberScope)
             or memberFilter == "inactive" and ("Inactive " .. (GL.settings.kickDays or 60) .. "+ days") or MEMBER_FILTER_LABELS[memberFilter] or "Everyone")
         if total == 0 then
@@ -2964,7 +2990,8 @@ end
 local WELCOME_DEFAULTS = { enabled = false, delay = 8, mode = "click", minRank = 1 }
 local SHOUT_DEFAULTS = { enabled = false, levels = "10 20 30 40 50 60", every = false, promote = false, back = false, delay = 10, mode = "click", minRank = 0, nameStyle = "firstlower" }
 local NAME_STYLES = { firstlower = "first name, lowercase (zev)", first = "first name (Zev)", full = "full name (Zev Zev)", fulllower = "full name, lowercase (zev zev)" }
-local LOGIN_LABELS = { always = "Open the window", todo = "Open it when the to-do list has items", never = "Stay closed" }
+local LOGIN_LABELS = { card = "Show a small since-your-last-visit card", always = "Open the window", todo = "Open it when the to-do list has items", never = "Stay closed" }
+local LOGIN_DEFAULT = "card"
 local NOTE_DATE_LABELS = { none = "Nothing", public = "The public note", officer = "The officer note" }
 
 local function welcomeSettings()
@@ -3351,12 +3378,12 @@ local function buildSettingsPage()
     page.loginLabel:SetPoint("TOPLEFT", page.behaviourBox.body, "TOPLEFT", 4, y - 4)
     page.loginLabel:SetText("When I log in or reload:")
     local loginItems = {}
-    for _, key in ipairs({ "always", "todo", "never" }) do
-        loginItems[#loginItems + 1] = { text = LOGIN_LABELS[key], isChecked = function() return (GL.settings.openOnLogin or "always") == key end, toggle = function() GL.settings.openOnLogin = key GL:RefreshWindow() end }
+    for _, key in ipairs({ "card", "always", "todo", "never" }) do
+        loginItems[#loginItems + 1] = { text = LOGIN_LABELS[key], isChecked = function() return (GL.settings.openOnLogin or LOGIN_DEFAULT) == key end, toggle = function() GL.settings.openOnLogin = key GL:RefreshWindow() end }
     end
-    page.login = createFilter(page.behaviourBox.body, LOGIN_LABELS.always, loginItems, 200)
+    page.login = createFilter(page.behaviourBox.body, LOGIN_LABELS[LOGIN_DEFAULT], loginItems, 200)
     page.login:SetPoint("LEFT", page.loginLabel, "RIGHT", 8, 0)
-    explain(page.login, "Tabard opens by itself a few seconds after you log in or reload, once the roster has been read.")
+    explain(page.login, "A few seconds after you log in or reload, once the roster has been read. The card lists what changed while you were away and how many to-do items are open, with a button for the whole window; it only shows when there is something on it.")
     y = y - 30
     page.artLabel = page.behaviourBox.body:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     page.artLabel:SetPoint("TOPLEFT", page.behaviourBox.body, "TOPLEFT", 4, y - 4)
@@ -3565,7 +3592,7 @@ local function buildSettingsPage()
                 box:SetText(value ~= nil and tostring(value) or (box.allowNil and "" or "0"))
             end
         end
-        page.login:SetLabel(LOGIN_LABELS[GL.settings.openOnLogin or "always"] or LOGIN_LABELS.always)
+        page.login:SetLabel(LOGIN_LABELS[GL.settings.openOnLogin or LOGIN_DEFAULT] or LOGIN_LABELS[LOGIN_DEFAULT])
         page.art:SetLabel(THEME_LABELS[chosenTheme()] or THEME_LABELS[DEFAULT_THEME])
         page.brightness:SetLabel(WASH_LABELS[GL.settings.artBrightness or "normal"] or WASH_LABELS.normal)
         page.noteDate:SetLabel(NOTE_DATE_LABELS[GL.settings.noteJoinDate or "none"] or NOTE_DATE_LABELS.none)
@@ -3623,9 +3650,12 @@ local function buildCard()
     pcall(addArt, card, inset)
 
     card.subtitle = card:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    card.subtitle:SetPoint("TOPLEFT", card, "TOPLEFT", 84, -30)   -- clear of the portrait circle
-    card.subtitle:SetPoint("RIGHT", card, "RIGHT", -16, 0)
-    card.subtitle:SetJustifyH("LEFT")
+    -- Centred under the title like the title itself, inside margins that match on both sides so the centre
+    -- is the card's centre; the left margin also keeps it clear of the portrait circle.
+    card.subtitle:SetPoint("TOPLEFT", card, "TOPLEFT", 84, -30)
+    card.subtitle:SetPoint("RIGHT", card, "RIGHT", -84, 0)
+    card.subtitle:SetJustifyH("CENTER")
+    card.subtitle:SetWordWrap(false)
 
     local y = -8
     local function groupLabel(text)
@@ -3714,7 +3744,11 @@ local function buildCard()
     card.main = fieldRow("Main", {
         { key = "set", text = "Set...", onClick = function() pickMainFor(cardMember) end,
             hint = "Pick the main from a list of members. Make main and Unlink are next to it." },
-        { key = "makeMain", text = "Make main", width = 76, onClick = function() GL:SetMain(guildOf(), cardMember, "user") GL:RefreshWindow() end },
+        { key = "makeMain", text = "Make main", width = 76, onClick = function()
+            local finish = cardAdvance(cardMember)
+            GL:SetMain(guildOf(), cardMember, "user")
+            finish()
+        end },
         { key = "unlink", text = "Unlink", onClick = function() GL:Unlink(guildOf(), cardMember, "user") GL:RefreshWindow() end },
     })
     explain(card.main.buttons.makeMain, function(self) return self:IsEnabled() and "Make this character a main: it starts a group of its own, or takes over its current group." or "Already the main of its group." end)
@@ -4025,6 +4059,31 @@ openCard = function(member)
     if GL.Usage then pcall(GL.Usage.Card, GL.Usage) end
 end
 
+-- Working down the Members list from the card. Call it before a change that may drop the card's member out of
+-- the list (sorting a main or an alt while "No main or alt set" is showing) and call what it returns after:
+-- that refreshes the window and, when the member has gone from the list, moves the card on to whoever came
+-- next in the order shown, so a whole list can be worked through from the card without going back to the table.
+cardAdvance = function(member)
+    local page = pages.members
+    local before, index = page and page.rows, nil
+    if before and currentPage == "members" and card and card:IsShown() and cardMember == member then
+        for i, row in ipairs(before) do if row.member == member then index = i break end end
+    end
+    return function()
+        GL:RefreshWindow()
+        if not index or cardMember ~= member or currentPage ~= "members" then return end
+        local listed = {}
+        for _, row in ipairs(page.rows or {}) do listed[row.member] = true end
+        if listed[member] then return end
+        for i = index + 1, #before do
+            if listed[before[i].member] then openCard(before[i].member) return end
+        end
+        for i = index - 1, 1, -1 do   -- that was the last one: step back instead
+            if listed[before[i].member] then openCard(before[i].member) return end
+        end
+    end
+end
+
 -- Tabs ------------------------------------------------------------------------------------------------------
 local TAB_ORDER = { { "overview", "Overview" }, { "todo", "To-do" }, { "log", "Log" }, { "members", "Members" }, { "play", "Play" }, { "former", "Former" }, { "bans", "Bans" }, { "tools", "Tools" }, { "export", "Export" }, { "settings", "Settings" } }
 local TAB_KEYS = {}
@@ -4136,7 +4195,10 @@ local function ensureWindow()
         GL:Print("the window could not be built: " .. tostring(err))
         return false
     end
-    frame:SetScript("OnShow", function() pcall(showGuildEmblem, frame) GL:RequestScan(false) GL:RefreshWindow() end)
+    frame:SetScript("OnShow", function()
+        if GL.HideLoginCard then GL:HideLoginCard() end   -- the whole window replaces the login card
+        pcall(showGuildEmblem, frame) GL:RequestScan(false) GL:RefreshWindow()
+    end)
     frame:SetScript("OnHide", function() if card then card:Hide() end end)
     return true
 end
@@ -4151,6 +4213,7 @@ function GL:ToggleWindow(show)
     end
     local wasShown = frame:IsShown()
     frame:Show()
+    if self.HideLoginCard then self:HideLoginCard() end   -- the whole window replaces the login card
     if not wasShown and GL.Usage then pcall(GL.Usage.Opened, GL.Usage) end
     showPage(currentPage or "overview", not wasShown)
     return true
@@ -4208,13 +4271,152 @@ function GL:InstallUnitMenus()
     return true
 end
 
+-- The login card --------------------------------------------------------------------------------------------
+-- A small window instead of the whole one at login (settings.openOnLogin = "card", the default): what changed
+-- while you were away, as on the Overview, how many to-do items are open, and a button for the whole window.
+-- It only shows when there is something on it, and goes away when the window opens.
+local loginCard
+local LOGIN_ROWS = 6
+local LOGIN_WIDTH = 400
+
+local function buildLoginCard()
+    local inset
+    loginCard, inset = styleWindow(nil, "TabardUILoginFrame", "Tabard", LOGIN_WIDTH, 200)
+    loginCard:SetPoint("CENTER", UIParent, "CENTER", 0, 120)
+    loginCard:SetScript("OnDragStart", loginCard.StartMoving)
+    loginCard:SetScript("OnDragStop", loginCard.StopMovingOrSizing)
+    tinsert(UISpecialFrames, "TabardUILoginFrame")
+    inset:ClearAllPoints()
+    inset:SetPoint("TOPLEFT", loginCard, "TOPLEFT", 9, -58)
+    inset:SetPoint("BOTTOMRIGHT", loginCard, "BOTTOMRIGHT", -6, 6)
+    loginCard.inset = inset
+    pcall(showGuildEmblem, loginCard)
+    pcall(addArt, loginCard, inset)
+
+    loginCard.heading = loginCard:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    loginCard.heading:SetPoint("TOPLEFT", inset, "TOPLEFT", 12, -10)
+    loginCard.heading:SetText("Since your last visit")
+    loginCard.heading:SetTextColor(1, 0.82, 0)
+    loginCard.when = loginCard:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    loginCard.when:SetPoint("RIGHT", inset, "TOPRIGHT", -12, -17)
+    loginCard.when:SetTextColor(0.62, 0.62, 0.62)
+    loginCard.rule = solid(loginCard, "ARTWORK", 1, 1, 1, 0.12)
+    loginCard.rule:SetPoint("TOPLEFT", inset, "TOPLEFT", 12, -30)
+    loginCard.rule:SetPoint("TOPRIGHT", inset, "TOPRIGHT", -12, -30)
+    loginCard.rule:SetHeight(1)
+    loginCard.rows = {}
+    for i = 1, LOGIN_ROWS + 1 do   -- the last one is the to-do line
+        local row = linkRow(loginCard)
+        row:SetPoint("TOPLEFT", inset, "TOPLEFT", 12, -36 - (i - 1) * 20)
+        row:SetPoint("RIGHT", inset, "RIGHT", -12, 0)
+        row:Hide()
+        loginCard.rows[i] = row
+    end
+    loginCard.none = loginCard:CreateFontString(nil, "OVERLAY", "GameFontDisable")
+    loginCard.none:SetPoint("TOPLEFT", inset, "TOPLEFT", 16, -40)
+    loginCard.none:SetText("Nothing changed while you were away.")
+    loginCard.open = makeButton(loginCard, "Open Tabard", 110, function() GL:ToggleWindow(true) end)
+    loginCard.open:SetPoint("BOTTOMRIGHT", inset, "BOTTOMRIGHT", -12, 10)
+    explain(loginCard.open, "The whole window: Overview, To-do, Log, Members and the rest.")
+    loginCard.hint = loginCard:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    loginCard.hint:SetPoint("LEFT", inset, "BOTTOMLEFT", 16, 21)
+    loginCard.hint:SetPoint("RIGHT", loginCard.open, "LEFT", -8, 0)
+    loginCard.hint:SetJustifyH("LEFT")
+    loginCard.hint:SetTextColor(0.5, 0.5, 0.5)
+    loginCard.hint:SetText("Settings changes what opens at login.")
+end
+
+function GL:HideLoginCard()
+    if loginCard then loginCard:Hide() end
+end
+
+-- Shows the card when there is something on it; returns whether it was shown.
+function GL:ShowLoginCard()
+    local guild = self.db and IsInGuild() and self:Guild()
+    if not guild or (frame and frame:IsShown()) then return false end
+    local okNews, news = pcall(function() return self.WhatsNew and self:WhatsNew(guild) or nil end)
+    if not okNews or type(news) ~= "table" then news = {} end
+    local open = 0
+    local okTodo, todo = pcall(function() return self.TodoItems and self:TodoItems(guild) or {} end)
+    if okTodo and type(todo) == "table" then for _, item in ipairs(todo) do if not item.handled then open = open + 1 end end end
+    if #news == 0 and open == 0 then return false end
+    if not loginCard then
+        local ok, err = pcall(buildLoginCard)
+        if not ok then self:Print("the login card could not be built: " .. tostring(err)) return false end
+    end
+    local function openTo(go) return function() if GL:ToggleWindow(true) then go() end end end
+    local NEWS_ICONS = { green = ICONS.join, red = ICONS.leave, gold = ICONS.promote, blue = ICONS.level, purple = ICONS.note, grey = ICONS.other }
+    local rows = loginCard.rows
+    local limit = #news > LOGIN_ROWS and (LOGIN_ROWS - 1) or #news
+    local used = 0
+    for i = 1, LOGIN_ROWS do
+        local row, item = rows[i], news[i]
+        if i <= limit and item then
+            local go = item.member and openTo(function() openCard(item.member) end) or openTo(function() goLog(item.kinds) end)
+            row.Set(item.text, ACCENT[item.accent or "grey"] or ACCENT.grey, go, item.member and "Click to open the member card." or "Click to see these in the log.", item.icon or NEWS_ICONS[item.accent or "grey"])
+            used = i
+        elseif i == limit + 1 and #news > LOGIN_ROWS then
+            row.Set(GREY .. "and " .. (#news - limit) .. " more in the log|r", ACCENT.grey, openTo(function() goLog(nil) end), "The log starts with everything since your last visit.", ICONS.other)
+            used = i
+        else
+            row:Hide()
+        end
+    end
+    if #news == 0 then loginCard.none:Show() used = 1 else loginCard.none:Hide() end
+    local todoRow = rows[LOGIN_ROWS + 1]
+    if open > 0 then
+        todoRow:ClearAllPoints()
+        todoRow:SetPoint("TOPLEFT", loginCard.inset, "TOPLEFT", 12, -36 - used * 20)
+        todoRow:SetPoint("RIGHT", loginCard.inset, "RIGHT", -12, 0)
+        todoRow.Set(plural(open, "thing", "things") .. " on the to-do list", ACCENT.gold, function() GL:ShowPage("todo") end, "Trials, leaves, likely alts, whispered requests and promotions due.", ICONS.todo)
+        used = used + 1
+    else
+        todoRow:Hide()
+    end
+    loginCard.when:SetText(type(guild.visitSince) == "number" and ("last here " .. self:Ago(guild.visitSince)) or "")
+    loginCard:SetHeight(58 + 36 + used * 20 + 6 + 22 + 10 + 6)
+    loginCard:Show()
+    return true
+end
+
+-- Your own birthday, asked once at login (optional). It goes on your character like a birthday set on a card
+-- and is shared with the other Tabard users in the guild the same way, so they know when it is. Empty or
+-- cancelled means no, and the question is not asked again; the card can set it any time.
+local function askOwnBirthday()
+    if not GL.settings or GL.settings.birthdayAsked then return end
+    local guild = GL.db and IsInGuild() and GL:Guild()
+    local me = guild and guild.members[GL:PlayerName()]
+    if not me then return end   -- roster not read yet: ask at the next login instead
+    if InCombatLockdown and InCombatLockdown() then return end
+    GL.settings.birthdayAsked = true
+    if me.birthday then return end
+    definePopups()
+    askText("When is your birthday? Optional. It goes in Tabard so the other Tabard users in the guild know when it is. For example 4 Nov or 11/04; leave it empty to skip.", "", function(text)
+        if strtrim(text or "") == "" then return end
+        local m, d = GL:ParseMonthDay(text)
+        if not m then GL:Print("that is not a day I understand; use 4 Nov or 11/04. You can set it on your member card any time.") return end
+        GL:SetBirthday(guild, me, m, d, "user")
+        GL:Print("birthday set: " .. GL:FormatMonthDay(m, d) .. ". The other Tabard users in the guild will see it.")
+    end)
+end
+
 local loginFrame = CreateFrame("Frame")
 loginFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
-loginFrame:SetScript("OnEvent", function(self)
+loginFrame:SetScript("OnEvent", function(self, _, isLogin)
     self:UnregisterEvent("PLAYER_ENTERING_WORLD")
     pcall(GL.InstallUnitMenus, GL)
+    if isLogin then C_Timer.After(20, function() pcall(askOwnBirthday) end) end
+    local mode = GL.settings and GL.settings.openOnLogin or LOGIN_DEFAULT
+    if mode == "card" then
+        -- At login the last-visit marker is set once the roster has been read (Summary.lua, 12 s); the card waits for it.
+        C_Timer.After(isLogin and 13 or 6, function()
+            if not (GL.db and IsInGuild()) then return end
+            if InCombatLockdown and InCombatLockdown() then return end
+            pcall(GL.ShowLoginCard, GL)
+        end)
+        return
+    end
     C_Timer.After(6, function()
-        local mode = GL.settings and GL.settings.openOnLogin or "always"
         if mode == "never" or not (GL.db and IsInGuild()) then return end
         if InCombatLockdown and InCombatLockdown() then return end
         if mode == "todo" then

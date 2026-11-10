@@ -11,7 +11,7 @@
 -- Wire format (Sync.lua, message "U  version  usage"): "key=value" pairs joined by ";"
 --   s  days since counting started      d  days the window was used      o  opened by hand    a  opened at login
 --   p  page views, "ov12,mb7"           c  member cards opened           k  slash commands, "sy2,nk1"
---   f  features on, "wl,sh,hi"          l  open at login (always/todo/never)   b  background
+--   f  features on, "wl,sh,hi"          l  open at login (card/always/todo/never)   b  background
 --   g  guild size (to the nearest 10)   r  own rank index (0 = guild leader)  n  other Tabard users in the guild
 
 local ADDON_NAME, GL = ...
@@ -141,7 +141,7 @@ function Usage:Wire()
         if ok and isOn then features[#features + 1] = feature[1] end
     end
     parts[#parts + 1] = "f=" .. table.concat(features, ",")
-    parts[#parts + 1] = "l=" .. clean(s.openOnLogin or "always")
+    parts[#parts + 1] = "l=" .. clean(s.openOnLogin or "card")
     parts[#parts + 1] = "b=" .. clean(s.backgroundArt or "default")
     local guild = IsInGuild and IsInGuild() and GL.Guild and GL:Guild()
     if guild then
