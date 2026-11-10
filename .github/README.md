@@ -27,7 +27,9 @@ officers usually hold in their heads, and shares them with the other officers wh
 - **Look after new members.** Anyone online for half an hour without a hello becomes a to-do item, with a buddy suggested.
 - **One list of officer work.** Trial reviews, ended leaves, banned characters and promotions due, in one place.
 - **Play together.** See which guildies are online near your level, grouped by zone.
-- **Shared with your officers.** Officers who run Tabard keep each other up to date automatically.
+- **Know who just logged in.** One chat line when a guild member comes online, with their level and when they were last on.
+- **Call people what they go by.** Give a member a nickname and it shows after their name, and their alts' names, in guild chat.
+- **Shared with your officers.** Officers who run Tabard keep each other up to date automatically, and tell you when a newer Tabard is out.
 
 ## Install
 
@@ -51,7 +53,7 @@ own files and names the folder `tabard-main`.
 | ![The log](media/02-log.png) | ![The to-do list](media/03-todo.png) |
 | **Log:** every event with a coloured badge, searchable and filterable, with everything since your last visit above a divider. | **To-do:** likely alts, trial reviews, ended leaves, banned characters in the guild, promotions due and requests members whisper you (`!main`, `!bday`, `!loa`). |
 | ![Members](media/04-members.png) | ![Play](media/05-play.png) |
-| **Members:** sortable, with join dates, main and alt links, last online, raid attendance and notes. Click a row for the member card. | **Play:** guildies online within 4 or 8 levels of you, grouped by zone, plus the dungeons that fit your level. |
+| **Members:** sortable, with join dates, main and alt links, last online, raid attendance and notes. Click a row for the member card, or right-click a guild member anywhere in the game and choose "Open in Tabard". | **Play:** guildies online within 4 or 8 levels of you, grouped by zone, plus the dungeons that fit your level. |
 
 ![Former members](media/06-former.png)
 
@@ -69,7 +71,7 @@ own files and names the folder `tabard-main`.
 ## Commands
 
 `/tabard` opens the window. `/tabard scan`, `sync`, `status`, `import`, `todo`, `raid`, `backup`,
-`restore` and `welcome` do what they say, and the window has the same controls.
+`restore`, `welcome`, `nick` and `usage` do what they say, and the window has the same controls.
 
 ## Coming from Guild Roster Manager
 

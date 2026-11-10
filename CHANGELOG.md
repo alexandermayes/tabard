@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.1
+
+- The help sentence in the Bans, Play, Export and To-do toolbars no longer gets cut off with "..." when the window is at its normal size. Each now shows a short line that fits, and hovering it shows the full explanation.
+
 ## 1.2.0
 
 - Update notice. When a guildie running a newer Tabard says hello, you get one chat line ("Tabard 1.2.1 is available (you have 1.2.0; Jane runs the new one). Update it in the CurseForge app.") and the Overview's sharing block shows it until you update. Addons cannot update themselves on this client, so the line points at the CurseForge app. Earlier versions told each other they were "1.0.0" whatever the toc said; the version now comes from the toc.

@@ -144,6 +144,26 @@ local function makeButton(parent, text, width, onClick)
 end
 
 -- A tooltip that also shows while the button is disabled, so a greyed button can say why.
+-- Toolbar hints: one short sentence that fits between the controls and the count, with the full explanation on
+-- hover. A whole sentence used to run under the count on the right and get cut off with "...".
+local function hintText(page, short, long)
+    page.hint:SetText(short)
+    page.hintLong = long
+    if not page.hintArea then
+        page.hintArea = CreateFrame("Frame", nil, page)
+        page.hintArea:SetAllPoints(page.hint)
+        page.hintArea:EnableMouse(true)
+        page.hintArea:SetScript("OnEnter", function(self)
+            if page.hintLong and GameTooltip then
+                GameTooltip:SetOwner(self, "ANCHOR_BOTTOMLEFT")
+                GameTooltip:SetText(page.hintLong, 1, 1, 1, 1, true)
+                GameTooltip:Show()
+            end
+        end)
+        page.hintArea:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+    end
+end
+
 local function explain(button, textOf)
     if button.SetMotionScriptsWhileDisabled then button:SetMotionScriptsWhileDisabled(true) end
     button:SetScript("OnEnter", function(self)
@@ -1869,7 +1889,7 @@ local function buildBansPage()
     page.hint = page:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     page.hint:SetPoint("LEFT", page.add, "RIGHT", 12, 0)
     page.hint:SetTextColor(0.62, 0.62, 0.62)
-    page.hint:SetText("Click a row to lift or restore a ban. Tabard warns you when a banned character, or an alt of one, joins.")
+    hintText(page, "Click a row to lift or restore a ban.", "Click a row to lift or restore a ban. Tabard warns you when a banned character, or an alt of one, joins.")
     page.count:SetPoint("RIGHT", page, "TOPRIGHT", -16, -TOOLBAR_HEIGHT / 2)
     page.hint:SetPoint("RIGHT", page.count, "LEFT", -12, 0)   -- never runs under the count on the right
     page.hint:SetJustifyH("LEFT")
@@ -1941,7 +1961,7 @@ local function buildPlayPage()
     page.hint = page:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     page.hint:SetPoint("LEFT", page.filter, "RIGHT", 12, 0)
     page.hint:SetTextColor(0.62, 0.62, 0.62)
-    page.hint:SetText("Who you could play with right now. AFK, DND and app users are left out. Click to whisper, right-click for more.")
+    hintText(page, "Online near your level. Click to whisper.", "Who you could play with right now. AFK, DND and app users are left out. Click a row to whisper, right-click for more.")
     page.count:SetPoint("RIGHT", page, "TOPRIGHT", -16, -TOOLBAR_HEIGHT / 2)
     page.hint:SetPoint("RIGHT", page.count, "LEFT", -12, 0)
     page.hint:SetJustifyH("LEFT")
@@ -2282,7 +2302,7 @@ local function buildExportPage()
     page.hint = page:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     page.hint:SetPoint("LEFT", page.pick, "RIGHT", 12, 0)
     page.hint:SetTextColor(0.62, 0.62, 0.62)
-    page.hint:SetText("Comma-separated text. Click in the box, press Ctrl+A then Ctrl+C, and paste into a spreadsheet.")
+    hintText(page, "Ctrl+A, Ctrl+C in the box, then paste into a spreadsheet.", "Comma-separated text. Click in the box, press Ctrl+A then Ctrl+C, and paste into a spreadsheet.")
     page.count:SetPoint("RIGHT", page, "TOPRIGHT", -16, -TOOLBAR_HEIGHT / 2)
     page.hint:SetPoint("RIGHT", page.count, "LEFT", -12, 0)
     page.hint:SetJustifyH("LEFT")
@@ -2355,7 +2375,7 @@ local function buildTodoPage()
     page.hint = page:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     page.hint:SetPoint("LEFT", page.showHandled.label, "RIGHT", 16, 0)
     page.hint:SetTextColor(0.62, 0.62, 0.62)
-    page.hint:SetText("Marking an item handled hides it for every officer running Tabard. Members can whisper you !main, !bday or !loa.")
+    hintText(page, "Handled once, handled for every officer.", "Marking an item handled hides it for every officer running Tabard. Members can whisper you !main, !bday or !loa and the request lands here.")
     page.count:SetPoint("RIGHT", page, "TOPRIGHT", -16, -TOOLBAR_HEIGHT / 2)
     page.hint:SetPoint("RIGHT", page.count, "LEFT", -12, 0)
     page.hint:SetJustifyH("LEFT")
