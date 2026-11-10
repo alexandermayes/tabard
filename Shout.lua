@@ -12,67 +12,67 @@ GL.Shout = Shout
 local MAX_BYTES = 255
 local MAX_LEVEL = 60
 
--- Pools by milestone. {name} and {level} are filled in; a fact is appended when one fits.
+-- Pools by milestone, written like a guildie cheering in gchat: capitals for the hype, a lowercase tail.
+-- {name} and {level} are filled in, {NAME} is the name in capitals; a fact is appended when one fits.
 local LINES = {
     [10] = {
-        "grats on 10 {name}, talents unlocked",
-        "{name} hit 10. first talent point, spend it wisely",
-        "10 for {name}. deadmines is not far off",
-        "{name} is 10, the actual game starts about now",
+        "GZZZ {NAME}!! LEVEL 10!!",
+        "{NAME} HIT 10!!! TALENTS UNLOCKED",
+        "LETS GOOO {NAME}!! double digits",
+        "10!!! GZ {NAME}, deadmines soon",
     },
     [20] = {
-        "grats on 20 {name}. past the part where most people quit",
-        "{name} hit 20. SM runs are coming, ask in gchat",
-        "20 for {name}. wailing caverns and SFK are right there",
-        "{name} is 20, keep it rolling",
+        "GZZZ {NAME}!! LEVEL 20!!",
+        "{NAME} IS 20!!! LETS GOOOO",
+        "TWENTY!! GZ {NAME}",
+        "{NAME} HIT 20!! WC and SFK are calling",
     },
     [30] = {
-        "{name} hit 30. halfway in levels, nowhere near it in xp",
-        "grats on 30 {name}. SM is about to be your whole life for a bit",
-        "30 for {name}. the long middle starts now, we run dungeons through it",
-        "{name} is 30. the fun dungeons start showing up",
+        "GZZZ {NAME}!! LEVEL 30!!",
+        "{NAME} HIT 30!!! halfway in levels (not in xp lol)",
+        "THIRTY!! GZ {NAME}",
+        "LETS GOOO {NAME}!! 30!! SM time",
     },
     [40] = {
-        "{name} hit 40, go buy the mount",
-        "grats on 40 {name}. mount time, I hope you saved",
-        "40 for {name}. no more walking",
-        "{name} is 40. mount, then ZF and mara, ask in gchat",
+        "{NAME} HIT 40!!! MOUNT TIME!!",
+        "GZZZ {NAME}!! LEVEL 40!! no more walking",
+        "40!!! GZ {NAME}, go get that mount",
+        "LETS GOOOO {NAME}!! 40!!",
     },
     [50] = {
-        "{name} hit 50, home stretch",
-        "grats on 50 {name}. 10 to go, BRD is waiting",
-        "50 for {name}. the last 10 are the longest, we'll help",
-        "{name} is 50. almost there",
+        "GZZZ {NAME}!! LEVEL 50!!",
+        "{NAME} HIT 50!!! 10 more",
+        "FIFTY!! GZ {NAME}, home stretch",
+        "LETS GOOO {NAME}!! 50!! BRD is waiting",
     },
     [60] = {
-        "{name} hit 60. grats, the real game starts now",
-        "that's 60 for {name}, grats",
-        "grats on 60 {name}. attunements next, ask in gchat and we'll get you through them",
-        "{name} is 60. welcome to BRD and UBRS forever",
-        "60 for {name}. the real grind starts now, grats",
-        "{name} made it to 60, grats. ask in gchat about raids",
+        "{NAME} HIT 60!!!! GZZZZ",
+        "GZZZZ {NAME}!!! LEVEL 60!!!",
+        "SIXTY!!! {NAME} DID IT!!",
+        "LETS GOOOOO {NAME}!! 60!!!",
+        "GZ {NAME}!!! 60!!! attunements next, ask in gchat",
+        "{NAME} IS 60!!! GZ GZ GZ",
     },
 }
 
 -- Used for levels without a pool of their own (every-level mode, or custom milestones).
 local ANY_LINES = {
-    "grats on {level} {name}",
-    "{name} hit {level}",
-    "{level} for {name}, keep going",
-    "{name} dinged {level}",
-    "{name} is {level} now",
+    "GZ {NAME}!! {level}!!",
+    "DING {level} FOR {NAME}!!",
+    "{NAME} HIT {level}!! GZ",
+    "GZZ {NAME}!! {level}",
 }
 
 local PROMOTE_LINES = {
-    "{name} is {rank} now, well earned",
-    "{name} got bumped up to {rank}",
-    "{rank} for {name}, grats",
+    "GZ ON THE PROMO {NAME}!! {rank} now",
+    "{NAME} IS {RANK} NOW!!! well earned",
+    "PROMO!! GZ {NAME}, welcome to {rank}",
 }
 
 local BACK_LINES = {
-    "{name} is back after {away}, good to see you",
-    "{name} logged in for the first time in {away}. welcome back",
-    "look who's back. {name}, gone {away}",
+    "{NAME} IS BACK!!! been {away}, welcome back",
+    "LOOK WHO'S BACK!! HI {NAME}!! gone {away}",
+    "WB {NAME}!!! it's been {away}",
 }
 
 local DEFAULTS = {
@@ -165,10 +165,12 @@ local function pace(guild, name, prev, level, now)
     end
     if not best or now - best.t > 365 * 86400 then return nil end
     local from = best.level
+    -- "9 to 10 in under a day" says nothing; only a real stretch is worth a mention.
+    if level - from < 5 then return nil end
     local days = daysBetween(best.t, now)
     if days <= 0 then return string.format("%d to %d in under a day", from, level) end
-    if days == 1 then return string.format("a day from %d to %d", from, level) end
-    return string.format("%d days from %d to %d", days, from, level)
+    if days == 1 then return string.format("%d to %d in a day", from, level) end
+    return string.format("%d to %d in %d days", from, level, days)
 end
 
 local function altsAtMax(guild, member)
@@ -245,9 +247,13 @@ end
 
 local function fill(template, item)
     local text = template
-    text = string.gsub(text, "{name}", (string.gsub(styledName(item.name), "%%", "%%%%")))
+    local name = string.gsub(styledName(item.name), "%%", "%%%%")
+    local rank = string.gsub(item.rank or "a new rank", "%%", "%%%%")
+    text = string.gsub(text, "{name}", name)
+    text = string.gsub(text, "{NAME}", string.upper(name))
     text = string.gsub(text, "{level}", tostring(item.level or "?"))
-    text = string.gsub(text, "{rank}", item.rank or "a new rank")
+    text = string.gsub(text, "{rank}", rank)
+    text = string.gsub(text, "{RANK}", string.upper(rank))
     text = string.gsub(text, "{away}", item.away or "a while")
     text = string.gsub(text, "{me}", GL:PlayerFirstName())
     return tidy(text)

@@ -2979,6 +2979,8 @@ local function refreshLinesWindow()
     linesWindow.list.SetRows(rows)
     local what = linesWindow.kind == "welcome" and "Welcome lines" or ("Shoutout lines: " .. (SHOUT_POOL_LABELS[linesWindow.pool] or ("level " .. linesWindow.pool)))
     if linesWindow.SetTitle then pcall(linesWindow.SetTitle, linesWindow, what) end
+    linesWindow.hint:SetText(linesWindow.kind == "welcome" and "{name} {level} {class} and {me} are filled in. Keep lines under 230 characters."
+        or "{name} {level} {rank} {away} and {me} are filled in; {NAME} and {RANK} come out in capitals. Keep lines under 230 characters.")
     linesWindow.count:SetText(plural(#list, "line") .. (custom and ", your own" or ", stock"))
     linesWindow.reset:SetEnabled(custom and true or false)
     if linesWindow.pools then linesWindow.pools:SetLabel(SHOUT_POOL_LABELS[linesWindow.pool] or ("level " .. linesWindow.pool)) end

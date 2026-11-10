@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.2
+
+- Guild chat shoutouts sound like a guildie cheering now instead of a polite bot: "GZZZ AUREY!! LEVEL 20!!", "AUREY HIT 40!!! MOUNT TIME!!", "LOOK WHO'S BACK!! HI AUREY!!". Every stock pool (milestones, other levels, promotions, welcome-backs) was rewritten.
+- New placeholders `{NAME}` and `{RANK}` put the name or rank in capitals. The line editor lists them.
+- The "how long it took" fact only shows up for a real stretch (five levels or more), so no more "9 to 10 in under a day". It reads "10 to 20 in 2 days" now.
+- Lines you wrote yourself are untouched; only the stock pools changed.
+
 ## 1.1.1
 
 - Level shoutouts no longer call 30 "halfway" or 20 "a third of the way". XP per level keeps growing, so 30 is half the levels but far less than half the XP to 60 (by the classic XP table, XP halfway is around level 48). The new 30 line says exactly that: "halfway in levels, nowhere near it in xp".
