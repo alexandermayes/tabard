@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.4
+
+- A small login card instead of the whole window. A few seconds after you log in, a card the size of a tooltip lists what changed while you were away (the same lines as the Overview, each a link), how many to-do items are open, and an "Open Tabard" button. It only shows when there is something on it, and the whole window replaces it. It is the new default for "When I log in or reload" in Settings; "Open the window" is still there if you prefer it.
+- Working down a list from the member card. When the Members list is filtered to "No main or alt set" and you sort someone from their card ("Make main", "Set...", "Add alt..."), the card moves on to the next person in the list, so the whole list can be done from the card.
+- "Make all mains" on the Members page when "No main or alt set" is showing: everyone listed becomes a main of their own group in one go, after a confirmation. For when the list is long and most of them really are one-character members; the real alts can still be linked from their cards afterwards.
+- Your own birthday, asked once. About twenty seconds after your first login with this version, Tabard asks when your birthday is (optional; leave it empty to skip, and it never asks again). It goes on your character and is shared with the other Tabard users in the guild like a birthday set on a card, so they know when it is. Their Tabard takes it only when your rank is one they trust.
+
 ## 1.2.3
 
 - Overview tiles: the detail after the big number ("in Big Yikes", "186 of 198") stops short of the tile icon and is cut with "..." if it has to, instead of running underneath the icon.
