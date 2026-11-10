@@ -1307,6 +1307,18 @@ local function pickMainFor(member)
     end, member)
 end
 
+-- Links the character the picker returns as an alt of `member` (or of their main, when `member` is an alt).
+-- A character not yet in a group becomes a main with this first alt.
+local function pickAltFor(member)
+    openPicker("Which character is an alt of " .. plain(member.name) .. "?", "Pick one of their other characters. It becomes an alt of this one, which becomes the main if it was not in a group yet.", function(alt)
+        local guild = GL:Guild()
+        if not guild then return end
+        local main = GL:IsAlt(guild, member) and GL:MainOf(guild, member) or member
+        GL:LinkAlt(guild, alt, main, "user")
+        GL:RefreshWindow()
+    end, member)
+end
+
 -- Right-click on a member: the things officers do most, without opening the card.
 local function memberMenu(owner, member)
     local guild = GL:Guild()
@@ -1317,6 +1329,7 @@ local function memberMenu(owner, member)
         if root.CreateTitle then root:CreateTitle(plain(member.name)) end
         root:CreateButton("Open card", function() openCard(member) end)
         root:CreateButton("Link as an alt of...", function() pickMainFor(member) end)
+        root:CreateButton("Add an alt...", function() pickAltFor(member) end)
         if grouped and not GL:IsMain(guild, member) then root:CreateButton("Make main", function() GL:SetMain(guild, member, "user") GL:RefreshWindow() end) end
         if grouped then root:CreateButton("Unlink", function() GL:Unlink(guild, member, "user") GL:RefreshWindow() end) end
         root:CreateButton("Tabard note...", function()
@@ -2749,7 +2762,7 @@ local function buildOverviewPage()
                 local item = news[i]
                 if i <= limit and item then
                     local go = item.member and function() openCard(item.member) end or function() goLog(item.kinds) end
-                    local NEWS_ICONS = { green = ICONS.join, red = ICONS.leave, gold = ICONS.promote, blue = ICONS.level, grey = ICONS.other }
+                    local NEWS_ICONS = { green = ICONS.join, red = ICONS.leave, gold = ICONS.promote, blue = ICONS.level, purple = ICONS.note, grey = ICONS.other }
                     row.Set(item.text, ACCENT[item.accent or "grey"] or ACCENT.grey, go, item.member and "Click to open the member card." or "Click to see these in the log.", item.icon or NEWS_ICONS[item.accent or "grey"])
                 elseif i == limit + 1 and #news > #newsRows then
                     row.Set(GREY .. "and " .. (#news - limit) .. " more in the log|r", ACCENT.grey, function() goLog(nil) end, "The log starts with everything since your last visit.", ICONS.other)
@@ -3607,7 +3620,7 @@ local function buildCard()
     pcall(addArt, card, inset)
 
     card.subtitle = card:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    card.subtitle:SetPoint("TOPLEFT", card, "TOPLEFT", 16, -30)
+    card.subtitle:SetPoint("TOPLEFT", card, "TOPLEFT", 84, -30)   -- clear of the portrait circle
     card.subtitle:SetPoint("RIGHT", card, "RIGHT", -16, 0)
     card.subtitle:SetJustifyH("LEFT")
 
@@ -3701,15 +3714,18 @@ local function buildCard()
         { key = "makeMain", text = "Make main", width = 76, onClick = function() GL:SetMain(guildOf(), cardMember, "user") GL:RefreshWindow() end },
         { key = "unlink", text = "Unlink", onClick = function() GL:Unlink(guildOf(), cardMember, "user") GL:RefreshWindow() end },
     })
-    explain(card.main.buttons.makeMain, function(self) return self:IsEnabled() and "Make this character the main of its group." or "Already the main, or not in a group." end)
+    explain(card.main.buttons.makeMain, function(self) return self:IsEnabled() and "Make this character a main: it starts a group of its own, or takes over its current group." or "Already the main of its group." end)
     explain(card.main.buttons.unlink, function(self) return self:IsEnabled() and "Take this character out of its main/alt group." or "Not in a group." end)
-    card.alts = fieldRow("Alts")
+    card.alts = fieldRow("Alts", {
+        { key = "add", text = "Add alt...", width = 76, onClick = function() pickAltFor(cardMember) end,
+            hint = "Pick one of this person's other characters from a list. It is linked as an alt of this character." },
+    })
     card.alts:SetHeight(36)
     card.alts.label:ClearAllPoints()
     card.alts.label:SetPoint("TOPLEFT", card.alts, "TOPLEFT", 0, -4)
     card.alts.value:ClearAllPoints()
     card.alts.value:SetPoint("TOPLEFT", card.alts.label, "TOPRIGHT", 4, 0)
-    card.alts.value:SetPoint("RIGHT", card.alts, "RIGHT", -6, 0)
+    card.alts.value:SetPoint("RIGHT", card.alts.buttons.add, "LEFT", -6, 0)
     card.alts.value:SetWordWrap(true)
     card.alts.value:SetMaxLines(2)
     y = y - 14
@@ -3916,9 +3932,9 @@ local function buildCard()
         card.lastOnline.buttons.watch:SetEnabled(not former)
         local main, group = GL:MainOf(guild, member)
         if group and main and main.name ~= member.name then card.main.value:SetText("alt of " .. GL:ColoredName(main))
-        elseif group then card.main.value:SetText("this character is the main")
+        elseif group then card.main.value:SetText(#group.alts > 0 and "this character is the main" or "a main, no alts linked yet")
         else card.main.value:SetText(GREY .. "not set|r") end
-        card.main.buttons.makeMain:SetEnabled(group ~= nil and not GL:IsMain(guild, member))
+        card.main.buttons.makeMain:SetEnabled(not former and not GL:IsMain(guild, member))
         card.main.buttons.unlink:SetEnabled(group ~= nil)
         local alts = GL:AltsOf(guild, member)
         local names = {}

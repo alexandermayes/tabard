@@ -2,6 +2,10 @@
 
 ## 1.2.1
 
+- Note changes get their own lines in "Since your last visit" on the Overview and in the login report ("Check Myspeed's note is now "alt of Zev""), instead of being counted among "other changes". The chat summary at login counts them too ("3 note changes").
+- "Make main" on the member card works for a character that is not in any group yet: it starts a group with them as the main, so "not sorted into main or alt" stops counting them. Before, the button was greyed out with "not in a group".
+- "Add alt..." on the card's Alts row (and "Add an alt..." in the right-click menu) picks one of the person's other characters from the member list and links it as their alt. Before, the only way was to open the alt's card and answer "Who is X's main?".
+- The member card's second line ("Level 21 Hunter, Yiker") no longer hides behind the portrait circle.
 - The help sentence in the Bans, Play, Export and To-do toolbars no longer gets cut off with "..." when the window is at its normal size. Each now shows a short line that fits, and hovering it shows the full explanation.
 
 ## 1.2.0

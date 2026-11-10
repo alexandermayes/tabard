@@ -55,9 +55,8 @@ own files and names the folder `tabard-main`.
 | ![Members](media/04-members.png) | ![Play](media/05-play.png) |
 | **Members:** sortable, with join dates, main and alt links, last online, raid attendance and notes. Click a row for the member card, or right-click a guild member anywhere in the game and choose "Open in Tabard". | **Play:** guildies online within 4 or 8 levels of you, grouped by zone, plus the dungeons that fit your level. |
 
-![Former members](media/06-former.png)
-
-**Former members:** everyone who left or was removed keeps their join date, last rank and how they went.
+| ![Former members](media/06-former.png) | ![Settings](media/07-settings.png) |
+| **Former members:** everyone who left or was removed keeps their join date, last rank and how they went. | **Settings:** every option in the window, nothing hidden behind slash commands. |
 
 ## Also in the box
 
