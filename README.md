@@ -22,7 +22,11 @@ usually keeps in their head, and it shares that knowledge between officers autom
   strikes, all three notes, actions (promote, demote, remove, ban) and the member's full history.
 - **Mains and alts**: right-click a member to link them from a searchable list, your own characters are grouped
   automatically, and likely alts show up on the To-do tab with Link and Not alts. Event lines show "(main)" or
-  "(alt of X)" after a name.
+  "(alt of X)" after a name, and guild chat shows the main's name after an alt's name.
+- **Nicknames**: give a member a nickname on their card (or `/tabard nick NAME = NICKNAME`) and it shows after
+  their name, and their alts' names, in guild chat and on tooltips.
+- **Login lines**: "X (main) is online (level 48 Mage, last on 2 days ago)." when a guild member logs in; off
+  with one checkbox.
 - **New members' first week**: how long they have been online and whether anyone has talked to them. A
   newcomer who has been online half an hour with no hello becomes a To-do item, with a guildie near their
   level suggested as a buddy. Only flags and minutes are kept, never message text.
@@ -43,15 +47,16 @@ usually keeps in their head, and it shares that knowledge between officers autom
 
 ### Sharing between officers
 
-Officers who run Tabard exchange join dates, promotion dates, alts, bans, notes, birthdays, votes,
+Officers who run Tabard exchange join dates, promotion dates, alts, bans, notes, nicknames, birthdays, votes,
 strikes and handled items through addon messages. Only members at or above the rank you choose are
-trusted. Nothing is announced on their behalf.
+trusted. Nothing is announced on their behalf. The hello also carries the version, so when a guildie runs a
+newer Tabard you get one chat line saying it is time to update in the CurseForge app.
 
 ## Slash commands
 
 `/tabard` opens the window. `/tabard scan`, `/tabard sync`, `/tabard status`, `/tabard import`,
-`/tabard todo`, `/tabard raid`, `/tabard backup`, `/tabard restore` and `/tabard welcome` do what they
-say; the window has the same controls.
+`/tabard todo`, `/tabard raid`, `/tabard backup`, `/tabard restore`, `/tabard welcome` and `/tabard nick` do what
+they say; the window has the same controls.
 
 ## Coming from Guild Roster Manager
 

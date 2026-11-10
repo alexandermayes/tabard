@@ -224,12 +224,17 @@ local function diffRoster(guild, roster, now, partial)
                 GL:AddEvent(guild, "onote", { who = name, from = member.onote, to = line.onote }, now)
                 noteChanged = true
             end
-            if line.online and member.lastOnline and (now - member.lastOnline) >= inactiveAfter and not member.online then
+            local cameOnline = line.online and not member.online
+            local cameBack = false
+            if cameOnline and member.lastOnline and (now - member.lastOnline) >= inactiveAfter then
                 local away = (string.gsub(GL:Ago(member.lastOnline, now), " ago$", ""))
                 GL:AddEvent(guild, "back", { who = name, text = away }, now)
                 if GL.Shout then GL.Shout:OnBack(guild, name, away) end
+                cameBack = GL.settings.announce and GL.settings.announce.back and true or false   -- the "back" line covers the login
             end
-            if member.watch and line.online and not member.online then
+            -- The login line (Settings: "comes online"); the Watch line is only needed when it is off.
+            local told = cameOnline and not cameBack and GL.AnnounceOnline and GL:AnnounceOnline(guild, member, line, now)
+            if member.watch and cameOnline and not told then
                 GL:Print(GL:ColoredName(member) .. " is online now (you asked to be told; the Watch button on their card turns this off).")
             end
             if (line.online and true or false) ~= (member.online and true or false) and GL.NoteTransition then GL:NoteTransition(guild, name, line.online, now) end

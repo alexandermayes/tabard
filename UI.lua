@@ -1618,6 +1618,7 @@ local function memberRows(guild)
         if keep and needle ~= "" then
             keep = string.find(string.lower(name), needle, 1, true) ~= nil or string.find(string.lower(member.rank or ""), needle, 1, true) ~= nil
                 or string.find(string.lower(member.note or ""), needle, 1, true) ~= nil or string.find(string.lower(member.custom or ""), needle, 1, true) ~= nil
+                or string.find(string.lower(GL:Nickname(guild, member) or ""), needle, 1, true) ~= nil
         end
         if keep then
             local main = GL:MainOf(guild, member)
@@ -2900,6 +2901,9 @@ local function buildOverviewPage()
         local peers = {}
         local okPeers, list = pcall(function() return GL.Sync and GL.Sync.Peers and GL.Sync:Peers(guild) or {} end)
         if okPeers and type(list) == "table" then peers = list end
+        if GL.newerVersion then
+            lines[#lines + 1] = "|cffffd100Tabard " .. tostring(GL.newerVersion) .. " is available (you have " .. tostring(GL.version) .. "). Update it in the CurseForge app.|r"
+        end
         if #peers == 0 then
             lines[#lines + 1] = GREY .. "Nobody else runs Tabard yet. Officers who install it share join dates, alts, bans and notes with you automatically.|r"
         else
@@ -3112,8 +3116,9 @@ local function buildSettingsPage()
     -- Left: chat announcements, three columns of check boxes.
     local LABELS = { join = "joins", rejoin = "rejoins", leave = "leaves", kick = "is removed", promote = "is promoted", demote = "is demoted",
         level = "levels up", note = "has a note changed", onote = "has an officer note changed", custom = "has a Tabard note changed", rename = "changes name",
-        rank = "has a rank renamed", back = "returns after a break", alt = "is linked as an alt", main = "is made a main", ban = "is banned", unban = "has a ban lifted" }
-    local perColumn = 9
+        rank = "has a rank renamed", back = "returns after a break", alt = "is linked as an alt", main = "is made a main", ban = "is banned", unban = "has a ban lifted",
+        nick = "has a nickname set" }
+    local perColumn = 10
     local announceHeight = 34 + perColumn * 24 + 10
     page.announceBox = section(content, "Announce in chat when someone...", PAD, -PAD, leftWidth, announceHeight)
     page.announce = {}
@@ -3131,6 +3136,12 @@ local function buildSettingsPage()
             if y <= -24 * perColumn and column < 1 then column, y = column + 1, 0 end
         end
     end
+    -- Logins are not recorded events, so this box sits outside the kinds list.
+    page.announce.online = makeCheck(page.announceBox.body, "comes online", function(checked) GL.settings.announce.online = checked end)
+    page.announce.online:SetPoint("TOPLEFT", page.announceBox.body, "TOPLEFT", column * columnWidth - 4, y + 2)
+    page.announce.online.label:SetWidth(columnWidth - 26)
+    page.announce.online.label:SetJustifyH("LEFT")
+    page.announce.online.label:SetWordWrap(false)
 
     -- Left, middle: welcome whispers.
     local welcomeTop = -PAD - announceHeight - GAP
@@ -3277,7 +3288,7 @@ local function buildSettingsPage()
         { key = "firstWeek", label = "Track new members' first week (time online, whether anyone talked to them)", default = true },
         { key = "anniversaries", label = "Mention join anniversaries and birthdays at login" },
         { key = "loginReport", label = "At login, list who joined, left and changed rank while I was away" },
-        { key = "hints", label = "Show the main's name after an alt's name in guild chat", default = true },
+        { key = "hints", label = "Show the main's name, or the nickname, after names in guild chat", default = true },
         { key = "requests", label = "Accept requests whispered to you (!main, !bday, !loa); they land on the To-do tab", default = true },
         { key = "raidTracking", label = "Track raid attendance, bench and loot while you are in a raid group", default = true },
     }
@@ -3763,6 +3774,8 @@ local function buildCard()
     end, "The officer note from the guild roster (31 characters).")
     card.custom = noteRow("Tabard note", function(text) GL:SetCustomNote(guildOf(), cardMember, text, "user") GL:RefreshWindow() end,
         "A longer note (160 characters) that only Tabard users see. Shared with other officers running the addon.")
+    card.nick = noteRow("Nickname", function(text) GL:SetNickname(guildOf(), cardMember, text, "user") GL:RefreshWindow() end,
+        "What people call them (31 characters). Shown after their name, and the names of their alts, in guild chat and on tooltips. Kept on their main and shared with other officers.")
 
     card.safeKick = makeCheck(card, "Never suggest removing", function(checked) GL:SetSafe(guildOf(), cardMember, "kick", checked, "user") end)
     card.safeKick:SetPoint("TOPLEFT", inset, "TOPLEFT", 6, y + 2)
@@ -3945,6 +3958,7 @@ local function buildCard()
         fill(card.custom, member.custom, true)
         card.custom.editable = true
         card.custom.box:SetEnabled(true)
+        fill(card.nick, GL:Nickname(guild, member), true)
         card.safeKick:SetChecked(GL:IsSafe(member, "kick"))
         card.safePromote:SetChecked(GL:IsSafe(member, "promote"))
         card.promote:SetEnabled(not former and GL:CanPromote() and (member.rankIndex or 0) > 1)

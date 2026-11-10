@@ -2,7 +2,8 @@
 -- When an alt talks, the chat line shows whose alt it is: "[Ooh Woo (Check Myspeed)]: hi". Uses the client's
 -- sender-name filter, so it works in every chat frame and with chat addons; the link behind the name still
 -- carries the real character name. The client skips the filter while names are secret (boss encounters).
--- An alt group can carry a nickname (group.nick) that is shown instead of the main's name.
+-- A member with a nickname (set on the card or with /tabard nick) shows that instead, on every character of
+-- theirs: "[Ooh Woo (Checky)]: hi".
 
 local ADDON_NAME, GL = ...
 
@@ -22,7 +23,9 @@ function Hints:For(guild, name)
     if not member then return nil end
     local parts = {}
     local main, group = GL:MainOf(guild, member)
-    if group and main and main ~= member then parts[#parts + 1] = group.nick or main.name end
+    local nick = GL.Nickname and GL:Nickname(guild, member)
+    if nick then parts[#parts + 1] = nick
+    elseif group and main and main ~= member then parts[#parts + 1] = main.name end
     if GL.IsNewcomer and GL:IsNewcomer(member) then parts[#parts + 1] = "new" end
     if #parts == 0 then return nil end
     return table.concat(parts, ", ")

@@ -236,6 +236,8 @@ local function addTooltipLines(tooltip, unit)
     if member.joined then
         tooltip:AddLine("Joined " .. GL:FormatDate(member.joined) .. "  (" .. GL:Span(GL:Now() - member.joined) .. ")", 0.61, 0.84, 1)
     end
+    local nick = GL.Nickname and GL:Nickname(guild, member)
+    if nick then tooltip:AddLine("Goes by " .. nick, 0.61, 0.84, 1) end
     if GL.IsNewcomer and GL:IsNewcomer(member) then
         local done, total = GL:NewcomerSummary(guild, member)
         tooltip:AddLine("New this week" .. (GL:NewcomerContacted(member) and "" or ", nobody has talked to them yet") .. " (" .. done .. "/" .. total .. " first-week steps)", 0.2, 0.87, 0.8)

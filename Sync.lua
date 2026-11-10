@@ -21,6 +21,7 @@
 --   B  name  t  by  reason  class  stamp  lifted  liftedBy
 --   C  name  text  by  stamp          ledger note (empty text clears it)
 --   D  name  month  day  stamp        birthday (month 0 clears it)
+--   I  name  nick  by  stamp          nickname (empty text clears it)
 --   S  name  flags  stamp             leave-alone flags, "k" and/or "p"
 --   E  count                          end of an exchange
 
@@ -233,6 +234,12 @@ local function birthdayRecord(member)
     return table.concat({ "D", member.name, b and b.m or 0, b and b.d or 0, stamp }, SEP), stamp
 end
 
+local function nickRecord(member)
+    local stamp = GL:StampOf(member, "nick")
+    if stamp == 0 then return nil end
+    return table.concat({ "I", member.name, string.sub(clean(member.nick), 1, 31), clean(member.nickBy), stamp }, SEP), stamp
+end
+
 local function safeRecord(member)
     local stamp = GL:StampOf(member, "safe")
     if stamp == 0 then return nil end
@@ -290,6 +297,7 @@ function Sync:Share(guild, kind, member, name)
     elseif kind == "B" then message = banRecord(guild, name)
     elseif kind == "C" then message = member and noteRecord(member)
     elseif kind == "D" then message = member and birthdayRecord(member)
+    elseif kind == "I" then message = member and nickRecord(member)
     elseif kind == "S" then message = member and safeRecord(member)
     elseif kind == "L" then message = member and loaRecord(member)
     elseif kind == "T" then message = member and name and trialRecord(member, name)
@@ -328,6 +336,7 @@ function Sync:SendAll(guild, target, since)
             add(promoRecord(member))
             add(noteRecord(member))
             add(birthdayRecord(member))
+            add(nickRecord(member))
             add(safeRecord(member))
             add(loaRecord(member))
             if member.trial and member.trial.votes then
@@ -450,6 +459,9 @@ local function apply(guild, fields, sender)
         elseif kind == "D" then
             local member, m, d, stamp = GL:Member(guild, fields[2]), number(fields[3]), number(fields[4]), number(fields[5])
             if member then GL:SetBirthday(guild, member, m > 0 and m or nil, d > 0 and d or nil, "sync", stamp) end
+        elseif kind == "I" then
+            local member, text, by, stamp = GL:Member(guild, fields[2]), fields[3], fields[4], number(fields[5])
+            if member and GL.SetNickname then GL:SetNickname(guild, member, text, "sync", by ~= "" and by or nil, stamp) end
         elseif kind == "S" then
             local member, flags, stamp = GL:Member(guild, fields[2]), fields[3] or "", number(fields[4])
             if member and stamp > GL:StampOf(member, "safe") then
@@ -495,6 +507,20 @@ local function apply(guild, fields, sender)
     if not ok then GL:Print("could not apply a shared record from " .. tostring(sender) .. ": " .. tostring(err)) end
 end
 
+-- A peer running a newer release means a newer one is on CurseForge (the client cannot update addons itself):
+-- one chat line per session, and the Overview shows it until then.
+local announcedVersion
+local function noteVersion(version, sender)
+    local theirs, ours = GL:VersionNumber(version), GL:VersionNumber(GL.version)
+    if not (theirs and ours) or ours == 0 or theirs <= ours then return end
+    if GL.newerVersion and (GL:VersionNumber(GL.newerVersion) or 0) >= theirs then return end
+    GL.newerVersion = version
+    if announcedVersion ~= version then
+        announcedVersion = version
+        GL:Print(string.format("Tabard %s is available (you have %s; %s runs the new one). Update it in the CurseForge app.", version, GL.version, sender))
+    end
+end
+
 local function onMessage(prefix, message, channel, sender)
     if prefix ~= PREFIX or not enabled() then return end
     if channel ~= "GUILD" and channel ~= "WHISPER" then return end
@@ -511,6 +537,7 @@ local function onMessage(prefix, message, channel, sender)
         local version, asked, since, proto = first[2] or "?", first[3] == "1", number(first[4]), first[5] or "1"
         local now = GetTime()
         guild.peers[sender] = { version = version, proto = proto, t = GL:Now() }
+        pcall(noteVersion, version, sender)
         if proto == PROTO and (asked or (now - (Sync.answered[sender] or -HELLO_GAP)) >= HELLO_GAP) then
             Sync.answered[sender] = now
             -- introduce ourselves back: always to a guild-wide hello, once to a whispered one

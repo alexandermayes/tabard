@@ -243,6 +243,25 @@ function GL:SetCustomNote(guild, member, text, source, by, stamp)
     return true
 end
 
+-- A nickname belongs to the person, so it is kept on their main and shown after every character of theirs
+-- (Hints.lua puts it after names in guild chat). Empty text clears it. Shared with the other officers.
+function GL:SetNickname(guild, member, text, source, by, stamp)
+    text = type(text) == "string" and strtrim(text) or ""
+    if #text > 31 then text = string.sub(text, 1, 31) end
+    if source ~= "sync" then
+        local main = self.MainOf and self:MainOf(guild, member)
+        if main then member = main end
+    end
+    if source == "sync" and (stamp or 0) <= self:StampOf(member, "nick") then return false end
+    if (member.nick or "") == text and source ~= "sync" then return false end
+    member.nick, member.nickBy = text ~= "" and text or nil, by or self:PlayerName()
+    self:Stamp(member, "nick", stamp)
+    if recordable(source) then self:AddEvent(guild, "nick", { who = member.name, to = text, by = member.nickBy, src = source or "user" }, stamp) end
+    if source == "user" and self.Sync then self.Sync:Share(guild, "I", member) end
+    if self.OnLedgerChanged then self:OnLedgerChanged(guild) end
+    return true
+end
+
 function GL:SetBirthday(guild, member, month, day, source, stamp)
     if source == "sync" and (stamp or 0) <= self:StampOf(member, "birthday") then return false end
     if month and day then member.birthday = { m = month, d = day } else member.birthday = nil end
