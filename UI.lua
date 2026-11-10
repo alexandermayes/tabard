@@ -4321,12 +4321,14 @@ end
 -- while you were away, as on the Overview, how many to-do items are open, and a button for the whole window.
 -- It only shows when there is something on it, and goes away when the window opens.
 local loginCard
-local LOGIN_ROWS = 6
-local LOGIN_WIDTH = 400
+local LOGIN_ROWS = 8
+local LOGIN_WIDTH = 560
+local LOGIN_SCALE = 1.15   -- a touch larger than the window, since it is read from across the room at login
 
 local function buildLoginCard()
     local inset
     loginCard, inset = styleWindow(nil, "TabardUILoginFrame", "Tabard", LOGIN_WIDTH, 200)
+    loginCard:SetScale(LOGIN_SCALE)
     loginCard:SetPoint("CENTER", UIParent, "CENTER", 0, 120)
     loginCard:SetScript("OnDragStart", loginCard.StartMoving)
     loginCard:SetScript("OnDragStop", loginCard.StopMovingOrSizing)

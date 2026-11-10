@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.6
+
+- The login card is bigger: wider (560 instead of 400) so the lines stop being cut short, eight lines instead of six, and the whole card drawn 15% larger than the window.
+
 ## 1.2.5
 
 - Promote, Demote and Remove on the member card work on WoW Forever. The game refused them before ("Tabard tried to call the protected function"): on this client an addon may not change ranks or membership by itself. Now Promote and Demote are lists of ranks, nearest first, and Remove is a button; picking one puts a single "Promote Zev Zev to Raider" button in their place, and that click, being your own, goes through. Cancel or opening another member clears it. A rank two away is two steps in the one click. Never to guild leader.
