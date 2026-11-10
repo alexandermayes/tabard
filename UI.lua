@@ -669,15 +669,19 @@ local function statTile(parent, caption, accent, onClick, hint, icon)
     tile.accent = solid(tile, "ARTWORK", r, g, b, 0.85)
     tile.accent:SetPoint("TOPLEFT", 1, -1) tile.accent:SetPoint("TOPRIGHT", -1, -1) tile.accent:SetHeight(2)
     tile.icon = tile:CreateTexture(nil, "ARTWORK")
-    tile.icon:SetSize(22, 22)
+    tile.icon:SetSize(20, 20)
     tile.icon:SetPoint("TOPRIGHT", tile, "TOPRIGHT", -8, -8)
     tile.icon:SetAlpha(0.9)
     setIcon(tile.icon, icon, nil, { r, g, b })
     tile.number = tile:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
     tile.number:SetPoint("TOPLEFT", tile, "TOPLEFT", 10, -9)
     tile.number:SetTextColor(1, 1, 1)
+    -- The detail ("in Big Yikes", "186 of 198") stops short of the icon and truncates rather than run under it.
     tile.small = tile:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     tile.small:SetPoint("BOTTOMLEFT", tile.number, "BOTTOMRIGHT", 4, 3)
+    tile.small:SetPoint("RIGHT", tile.icon, "LEFT", -4, 0)
+    tile.small:SetJustifyH("LEFT")
+    tile.small:SetWordWrap(false)
     tile.small:SetTextColor(0.62, 0.62, 0.62)
     tile.caption = tile:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     tile.caption:SetPoint("BOTTOMLEFT", tile, "BOTTOMLEFT", 10, 8)
@@ -3623,9 +3627,12 @@ local function buildCard()
     pcall(addArt, card, inset)
 
     card.subtitle = card:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    card.subtitle:SetPoint("TOPLEFT", card, "TOPLEFT", 84, -30)   -- clear of the portrait circle
-    card.subtitle:SetPoint("RIGHT", card, "RIGHT", -16, 0)
-    card.subtitle:SetJustifyH("LEFT")
+    -- Centred under the title like the title itself, inside margins that match on both sides so the centre
+    -- is the card's centre; the left margin also keeps it clear of the portrait circle.
+    card.subtitle:SetPoint("TOPLEFT", card, "TOPLEFT", 84, -30)
+    card.subtitle:SetPoint("RIGHT", card, "RIGHT", -84, 0)
+    card.subtitle:SetJustifyH("CENTER")
+    card.subtitle:SetWordWrap(false)
 
     local y = -8
     local function groupLabel(text)

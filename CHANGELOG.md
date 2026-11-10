@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.3
+
+- Overview tiles: the detail after the big number ("in Big Yikes", "186 of 198") stops short of the tile icon and is cut with "..." if it has to, instead of running underneath the icon.
+- Member card: the second line ("Level 21 Hunter, Yiker") is centred under the name, as the name is, instead of starting at the portrait and sitting off to the left.
+
 ## 1.2.2
 
 - The Members table has a Nickname column, next to the name, so nicknames show outside guild chat too. Click the header to sort by it; a member's alts show the main's nickname.
