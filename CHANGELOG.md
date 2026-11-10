@@ -2,7 +2,7 @@
 
 ## 1.2.5
 
-- Promote and Demote on the member card are lists of ranks, nearest first, instead of one-step buttons. Pick the rank and Tabard steps the member there (the client only has one-step promote and demote, so a rank two away takes two steps, 0.6 seconds apart; the chat line says so). Never to guild leader.
+- Promote, Demote and Remove on the member card work on WoW Forever. The game refused them before ("Tabard tried to call the protected function"): on this client an addon may not change ranks or membership by itself. Now Promote and Demote are lists of ranks, nearest first, and Remove is a button; picking one puts a single "Promote Zev Zev to Raider" button in their place, and that click, being your own, goes through. Cancel or opening another member clears it. A rank two away is two steps in the one click. Never to guild leader.
 
 ## 1.2.4
 
