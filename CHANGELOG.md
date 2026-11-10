@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.2
+
+- The Members table has a Nickname column, next to the name, so nicknames show outside guild chat too. Click the header to sort by it; a member's alts show the main's nickname.
+
 ## 1.2.1
 
 - Note changes get their own lines in "Since your last visit" on the Overview and in the login report ("Check Myspeed's note is now "alt of Zev""), instead of being counted among "other changes". The chat summary at login counts them too ("3 note changes").

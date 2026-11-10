@@ -1605,14 +1605,15 @@ end
 -- Members page --------------------------------------------------------------------------------------------
 local MEMBER_COLUMNS = {
     { key = "icon", label = "", width = 22, icon = true },
-    { key = "name", label = "Name", width = 150 },
+    { key = "name", label = "Name", width = 140 },
+    { key = "nick", label = "Nickname", width = 72 },
     { key = "level", label = "Level", width = 44 },
-    { key = "rank", label = "Rank", width = 100 },
-    { key = "main", label = "Main", width = 110 },
-    { key = "joined", label = "Joined", width = 100 },
-    { key = "lastOnline", label = "Last online", width = 100 },
-    { key = "raids", label = "Raids", width = 48 },
-    { key = "note", label = "Note", width = 70 },
+    { key = "rank", label = "Rank", width = 90 },
+    { key = "main", label = "Main", width = 96 },
+    { key = "joined", label = "Joined", width = 88 },
+    { key = "lastOnline", label = "Last online", width = 92 },
+    { key = "raids", label = "Raids", width = 44 },
+    { key = "note", label = "Note", width = 56 },
 }
 
 local function memberRows(guild)
@@ -1728,6 +1729,7 @@ local function buildMembersPage()
             local member = data.member
             if key == "icon" then return member.class
             elseif key == "name" then return GL:ColoredName(member)
+            elseif key == "nick" then return GL:Nickname(data.guild, member) or ""
             elseif key == "level" then return member.level and tostring(member.level) or ""
             elseif key == "rank" then return member.rank or ""
             elseif key == "main" then
@@ -1765,6 +1767,7 @@ local function buildMembersPage()
         page.table.Sort(rows, function(row, key)
             local member = row.member
             if key == "raids" then return page.attendance[(row.main or member).name] or 0 end
+            if key == "nick" then return GL:Nickname(guild, member) or "~" end   -- "~" sorts the blanks last
             if key == "rank" then return member.rankIndex or 99 end
             if key == "main" then return row.main and row.main.name or (GL:IsMain(guild, member) and ("" .. member.name) or "~") end
             if key == "lastOnline" then return member.online and GL:Now() or (member.lastOnline or 0) end
