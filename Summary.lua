@@ -10,7 +10,7 @@ local ADDON_NAME, GL = ...
 -- Counts of events after `since`. Returns nil when there is nothing to compare against.
 function GL:AwaySummary(guild, since)
     if not (guild and type(since) == "number" and since > 0) then return nil end
-    local counts = { since = since, joins = 0, leaves = 0, ranks = 0, levels = 0, other = 0, total = 0 }
+    local counts = { since = since, joins = 0, leaves = 0, ranks = 0, levels = 0, notes = 0, other = 0, total = 0 }
     for i = #guild.events, 1, -1 do
         local event = guild.events[i]
         if event.t <= since then break end
@@ -19,6 +19,7 @@ function GL:AwaySummary(guild, since)
         elseif event.k == "leave" or event.k == "kick" then counts.leaves = counts.leaves + 1
         elseif event.k == "promote" or event.k == "demote" then counts.ranks = counts.ranks + 1
         elseif event.k == "level" then counts.levels = counts.levels + 1
+        elseif event.k == "note" or event.k == "onote" or event.k == "custom" then counts.notes = counts.notes + 1
         else counts.other = counts.other + 1 end
     end
     return counts
@@ -33,6 +34,7 @@ function GL:AwayText(counts)
     add(counts.leaves, "left", "left")
     add(counts.ranks, "rank change", "rank changes")
     add(counts.levels, "level-up", "level-ups")
+    add(counts.notes, "note change", "note changes")
     add(counts.other, "other change", "other changes")
     return table.concat(parts, ", ")
 end
@@ -44,9 +46,9 @@ function GL:SinceLastVisit(guild)
     return self:AwaySummary(guild, guild.visitSince)
 end
 
--- The lines for the Overview: nil when there is no marker yet; otherwise joins, leaves and rank changes as
--- their own lines (newest first), then the level-ups on one line and everything else on another.
--- item = { text, accent = "green" | "red" | "gold" | "blue" | "grey", member (when still in the guild), kinds }
+-- The lines for the Overview: nil when there is no marker yet; otherwise joins, leaves, rank changes and note
+-- changes as their own lines (newest first), then the level-ups on one line and everything else on another.
+-- item = { text, accent = "green" | "red" | "gold" | "blue" | "purple" | "grey", member (when still in the guild), kinds }
 function GL:WhatsNew(guild)
     guild = guild or self:Guild()
     local since = guild and guild.visitSince
@@ -64,6 +66,8 @@ function GL:WhatsNew(guild)
             items[#items + 1] = { text = self:Describe(event, guild), accent = "gold", member = self:Member(guild, event.who), kinds = { promote = true, demote = true } }
         elseif k == "level" then
             levels[#levels + 1] = event
+        elseif k == "note" or k == "onote" or k == "custom" then
+            items[#items + 1] = { text = self:Describe(event, guild), accent = "purple", member = self:Member(guild, event.who), kinds = { [k] = true } }
         else
             other = other + 1
             otherKinds[k] = true
@@ -85,7 +89,7 @@ function GL:WhatsNew(guild)
         items[#items + 1] = { text = text, accent = "blue", kinds = { level = true } }
     end
     if other > 0 then
-        items[#items + 1] = { text = other .. (other == 1 and " other change" or " other changes") .. " (notes, alts, bans, dates)", accent = "grey", kinds = otherKinds }
+        items[#items + 1] = { text = other .. (other == 1 and " other change" or " other changes") .. " (alts, bans, dates)", accent = "grey", kinds = otherKinds }
     end
     return items
 end
@@ -93,7 +97,7 @@ end
 -- The lines themselves, like Guild Roster Manager's login report: each join, leave and rank change on its own
 -- coloured line, newest first, level-ups together on one, the rest counted. Long absences are cut short.
 local REPORT_LINES = 12
-local ACCENT_COLOR = { green = "ff33dd33", red = "ffff5555", gold = "ffffd100", blue = "ff66aaff", grey = "ff9d9d9d" }
+local ACCENT_COLOR = { green = "ff33dd33", red = "ffff5555", gold = "ffffd100", blue = "ff66aaff", purple = "ffdd99ff", grey = "ff9d9d9d" }
 function GL:PrintLoginReport(guild)
     local items = self:WhatsNew(guild)
     if not items or #items == 0 then return end
