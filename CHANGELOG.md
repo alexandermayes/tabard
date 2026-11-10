@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.3
+
+- Promotion shoutouts read right: "MORUU IS A YIKER!! hell yeah" instead of "MORUU IS YIKER!!". The new `{a rank}` placeholder puts "a" or "an" before the rank ("a Raider", "an Officer"), and `{A RANK}` does the same in capitals.
+- Eight promotion lines instead of three, among them "GZZZ MORUU!! officially an Officer <3" and "welcome to the Raider club Moruu :D". "welcome to {rank} {name}" is gone (it read like the rank was a place).
+- New gold logo, easier to spot in the CurseForge app.
+
 ## 1.1.2
 
 - Guild chat shoutouts sound like a guildie cheering now instead of a polite bot: "GZZZ AUREY 10!!", "AUREY 40!!! MOUNT TIME", "LOOK WHO'S BACK!! hi Aurey <3". The lines follow a read of real Forever guild chat: short, no full stops, capitals and stretched letters for the hype, the rest lowercase with a :D or <3. Every stock pool (milestones, other levels, promotions, welcome-backs) was rewritten.

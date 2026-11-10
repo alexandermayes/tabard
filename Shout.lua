@@ -65,10 +65,17 @@ local ANY_LINES = {
     "ding {level} gz {name} :D",
 }
 
+-- Rank names are nouns ("Member", "Raider", "Officer"), so lines that say what someone is now use
+-- {a rank}, which comes out as "a Raider" or "an Officer" ({A RANK}: "A RAIDER").
 local PROMOTE_LINES = {
     "gz on the promo {name}!! <3",
-    "{NAME} IS {RANK}!! hell yeah",
-    "welcome to {rank} {name} :D",
+    "{NAME} IS {A RANK}!! hell yeah",
+    "{NAME} IS {A RANK} NOW LETS GOOO",
+    "GZZZ {NAME}!! officially {a rank} <3",
+    "HELL YEAH {NAME}!! {a rank} now :D",
+    "{NAME} GOT THE PROMO!! gz :D",
+    "welcome to the {rank} club {name} :D",
+    "look at {name} go!! {a rank} now <3",
 }
 
 local BACK_LINES = {
@@ -251,9 +258,16 @@ local function fill(template, item)
     local text = template
     local name = string.gsub(styledName(item.name), "%%", "%%%%")
     local rank = string.gsub(item.rank or "a new rank", "%%", "%%%%")
+    -- "a Yiker", "an Officer"; a rank that already starts with an article, or no rank at all, is left as is.
+    local arank = rank
+    if item.rank and not string.find(string.lower(rank), "^an? ") and not string.find(string.lower(rank), "^the ") then
+        arank = (string.find(rank, "^[AEIOUaeiou]") and "an " or "a ") .. rank
+    end
     text = string.gsub(text, "{name}", name)
     text = string.gsub(text, "{NAME}", string.upper(name))
     text = string.gsub(text, "{level}", tostring(item.level or "?"))
+    text = string.gsub(text, "{a rank}", arank)
+    text = string.gsub(text, "{A RANK}", string.upper(arank))
     text = string.gsub(text, "{rank}", rank)
     text = string.gsub(text, "{RANK}", string.upper(rank))
     text = string.gsub(text, "{away}", item.away or "a while")
