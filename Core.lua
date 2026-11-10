@@ -3,7 +3,25 @@
 -- Written from scratch for WoW Forever; the only outside pieces used are the game's own API and templates.
 
 local ADDON_NAME, GL = ...
-GL.version = "1.0.0"
+
+-- The version from the toc, so the sharing hello carries the real one (other Tabard users learn from it
+-- whether a newer release is out). "0.0.0" only when the client cannot read addon metadata.
+local function tocVersion()
+    local get = C_AddOns and C_AddOns.GetAddOnMetadata or GetAddOnMetadata
+    if not get then return nil end
+    local ok, value = pcall(get, ADDON_NAME, "Version")
+    if ok and type(value) == "string" and string.match(value, "^%d+%.%d+") then return value end
+    return nil
+end
+GL.version = tocVersion() or "0.0.0"
+
+-- "1.2.10" -> 1002010, so versions compare as numbers; nil when the text is not a version.
+function GL:VersionNumber(text)
+    if type(text) ~= "string" then return nil end
+    local a, b, c = string.match(text, "^(%d+)%.(%d+)%.?(%d*)")
+    if not a then return nil end
+    return tonumber(a) * 1000000 + tonumber(b) * 1000 + (tonumber(c) or 0)
+end
 GL.prefix = "|TInterface\\AddOns\\Tabard\\logo:14:14:0:0|t |cffffd100Tabard:|r "
 
 -- Event kinds -------------------------------------------------------------------------------
@@ -34,6 +52,7 @@ GL.KINDS = {
     trial = { order = 22, label = "Trial", color = "ffd6a85c" },
     strike = { order = 23, label = "Strike", color = "ffff8c5a" },
     request = { order = 24, label = "Request", color = "ffb48cff" },
+    nick = { order = 25, label = "Nickname set", color = "ffbbbbbb" },
 }
 
 GL.KIND_ORDER = {}
@@ -43,7 +62,8 @@ table.sort(GL.KIND_ORDER, function(a, b) return GL.KINDS[a].order < GL.KINDS[b].
 -- Defaults ---------------------------------------------------------------------------------
 local DEFAULT_SETTINGS = {
     announce = { join = true, rejoin = true, leave = true, kick = true, promote = true, demote = true, level = true, note = false, onote = false,
-        custom = false, rename = true, back = true, alt = false, main = false, ban = true, unban = true },
+        custom = false, rename = true, back = true, alt = false, main = false, ban = true, unban = true, nick = false,
+        online = true },  -- online is not an event kind: a line when a guild member logs in, nothing is recorded
     showFilters = {},        -- kind -> false hides it in the log; absent/true shows it
     inactiveDays = 30,       -- "back after a break" threshold
     kickDays = 60,           -- recommend removing members offline this long
@@ -52,6 +72,7 @@ local DEFAULT_SETTINGS = {
     promoteFromRank = nil,   -- rank index that counts as "newcomer"; nil = the lowest rank
     sync = true,             -- exchange join dates, alts, bans and notes with other Tabard users in the guild
     syncMinRank = 1,         -- accept shared data from members at this rank index or higher (0 = guild leader)
+    shareUsage = true,       -- send this copy's usage counts (pages opened, features on; no names) to Tabard users in the guild
     tooltip = true,          -- add Tabard lines to unit tooltips of guild members
     autoAlts = true,         -- read "alt of X" style notes to link alts
     learnFromGRM = true,     -- keep taking alt groups from Guild Roster Manager's data while it is installed
@@ -193,6 +214,17 @@ function GL:MainTag(guild, member)
         return " |cff9d9d9d(alt of " .. (main and main.name or "?") .. ")|r"
     end
     return " |cffffd100(main)|r"
+end
+
+-- The nickname people know a member by: their own, or their main's (a nickname belongs to the person, so it
+-- is kept on the main and shown after every character of theirs).
+function GL:Nickname(guild, member)
+    if not (guild and member) then return nil end
+    if member.nick then return member.nick end
+    local main, group = self.MainOf and self:MainOf(guild, member)
+    if main and main ~= member and main.nick then return main.nick end
+    if group and group.nick then return group.nick end
+    return nil
 end
 
 function GL:ClassName(classFile)
@@ -434,6 +466,9 @@ function GL:Describe(event, guild)
         return name .. "'s promotion date was set to " .. self:FormatDate(event.to) .. (by and (" by " .. by) or "") .. "."
     elseif kind == "birthday" then
         return name .. "'s birthday was set to " .. tostring(event.text or "") .. (by and (" by " .. by) or "") .. "."
+    elseif kind == "nick" then
+        if event.to and event.to ~= "" then return name .. " goes by \"" .. tostring(event.to) .. "\" now" .. (by and (" (" .. by .. ")") or "") .. "." end
+        return name .. "'s nickname was cleared" .. (by and (" (" .. by .. ")") or "") .. "."
     end
     return name .. ": " .. tostring(event.text or kind)
 end
@@ -479,6 +514,33 @@ function GL:Announce(event, guild)
         text = "|c" .. color .. string.gsub(text, "|r", "|r|c" .. color) .. "|r"
         self:Print(text)
     end
+end
+
+-- A guild member logged in: one line in the chat frame, like the level-up lines, with who they are and when
+-- they were last on. Only once the first roster read of the session is done (everyone online at login is not
+-- "logging in"), never for your own characters. `line` is the fresh roster line; `member` still holds the
+-- previous last-online time. Returns true when a line was printed.
+local ONLINE_COLOR = "ff33ccaa"
+function GL:AnnounceOnline(guild, member, line, now)
+    if self.quiet or not self.sessionReady then return false end
+    local announce = self.settings and self.settings.announce
+    if not (announce and announce.online) then return false end
+    if not (guild and member and member.name) or member.name == self:PlayerName() then return false end
+    if self.db and self.db.mine then
+        local key = self:GuildKey()
+        local mine = key and self.db.mine[key]
+        if mine and mine[member.name] then return false end
+    end
+    local name = self:ColoredName(member) .. self:MainTag(guild, member)
+    local nick = self:Nickname(guild, member)
+    local facts = {}
+    local level = line and line.level or member.level
+    if level and level > 0 then facts[#facts + 1] = "level " .. level .. (member.class and (" " .. self:ClassName(member.class)) or "") end
+    if member.lastOnline and now and now - member.lastOnline >= 3600 then facts[#facts + 1] = "last on " .. self:Ago(member.lastOnline, now) end
+    local text = name .. (nick and (" |cffffffff\"" .. nick .. "\"|r") or "") .. " is online" .. (#facts > 0 and (" (" .. table.concat(facts, ", ") .. ")") or "") .. "."
+    text = "|c" .. ONLINE_COLOR .. string.gsub(text, "|r", "|r|c" .. ONLINE_COLOR) .. "|r"
+    self:Print(text)
+    return true
 end
 
 -- Stamps -------------------------------------------------------------------------------------------
@@ -544,6 +606,7 @@ SLASH_TABARD1 = "/tabard"
 SlashCmdList["TABARD"] = function(message)
     local command, rest = string.match(message or "", "^%s*(%S*)%s*(.-)%s*$")
     command = string.lower(command or "")
+    if command ~= "" and GL.Usage then pcall(GL.Usage.Command, GL.Usage, command) end
     if command == "" or command == "show" or command == "toggle" then
         if GL.ToggleWindow then GL:ToggleWindow() end
     elseif command == "scan" then
@@ -563,6 +626,22 @@ SlashCmdList["TABARD"] = function(message)
         if GL.Shout then GL.Shout:Command(rest) end
     elseif command == "hints" then
         if GL.Hints then GL.Hints:Command(rest) end
+    elseif command == "nick" or command == "nickname" then
+        -- /tabard nick Check Myspeed = Checky   (nothing after "=" clears it)
+        local guild = GL:Guild()
+        local who, nick = string.match(rest or "", "^(.-)%s*=%s*(.-)$")
+        if not guild then GL:Print("you are not in a guild.")
+        elseif not who or who == "" then GL:Print("usage: |cffffffff/tabard nick NAME = NICKNAME|r sets what someone goes by (shown after their name in guild chat); |cffffffff/tabard nick NAME =|r clears it.")
+        else
+            local member = GL:FindMember(guild, who, true)
+            if not member then GL:Print("no member called \"" .. who .. "\".")
+            else
+                GL:SetNickname(guild, member, nick, "user")
+                local target = GL:MainOf(guild, member) or member
+                GL:Print(GL:ColoredName(target) .. (target.nick and (" goes by \"" .. target.nick .. "\" now.") or " has no nickname now."))
+                if GL.RefreshWindow then GL:RefreshWindow() end
+            end
+        end
     elseif command == "todo" or command == "requests" then
         if GL.Officers then GL.Officers:Command(rest) end
     elseif command == "raid" then
@@ -571,6 +650,10 @@ SlashCmdList["TABARD"] = function(message)
         if GL.KeepCommand then GL:KeepCommand(command == "size" and "" or command) end
     elseif command == "art" or command == "background" or command == "theme" then
         if GL.ArtCommand then GL:ArtCommand(rest) end
+    elseif command == "usage" then
+        if GL.Usage then GL.Usage:ShowOwn() end
+    elseif command == "users" then
+        if GL.Usage then GL.Usage:ShowUsers() end
     elseif command == "status" then
         local guild = GL:Guild()
         if not guild then GL:Print("you are not in a guild.") return end
@@ -582,6 +665,6 @@ SlashCmdList["TABARD"] = function(message)
         GL:Print(string.format("%s: %d members, %d with a join date, %d alt groups, %d bans, %d events recorded, %d scans.",
             guild.name, members, dated, GL:Count(guild.groups), GL:Count(guild.bans), #guild.events, guild.scans or 0))
     else
-        GL:Print("commands: |cffffffff/tabard|r opens the window, |cffffffff/tabard scan|r rescans the roster, |cffffffff/tabard sync|r asks other officers for their data, |cffffffff/tabard import|r previews a GRM import (|cffffffff/tabard import apply|r applies it), |cffffffff/tabard minimap|r toggles the button, |cffffffff/tabard status|r shows what is recorded, |cffffffff/tabard art next|r changes the background, |cffffffff/tabard welcome|r sets up welcome whispers for new members, |cffffffff/tabard shout|r sets up guild chat shoutouts for level milestones.")
+        GL:Print("commands: |cffffffff/tabard|r opens the window, |cffffffff/tabard scan|r rescans the roster, |cffffffff/tabard sync|r asks other officers for their data, |cffffffff/tabard import|r previews a GRM import (|cffffffff/tabard import apply|r applies it), |cffffffff/tabard minimap|r toggles the button, |cffffffff/tabard status|r shows what is recorded, |cffffffff/tabard art next|r changes the background, |cffffffff/tabard welcome|r sets up welcome whispers for new members, |cffffffff/tabard shout|r sets up guild chat shoutouts for level milestones, |cffffffff/tabard nick NAME = NICKNAME|r sets what someone goes by in chat, |cffffffff/tabard users|r lists the other Tabard users in the guild and what they use, |cffffffff/tabard usage|r shows your own usage line to copy.")
     end
 end

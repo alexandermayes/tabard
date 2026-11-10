@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.0
+
+- Update notice. When a guildie running a newer Tabard says hello, you get one chat line ("Tabard 1.2.1 is available (you have 1.2.0; Jane runs the new one). Update it in the CurseForge app.") and the Overview's sharing block shows it until you update. Addons cannot update themselves on this client, so the line points at the CurseForge app. Earlier versions told each other they were "1.0.0" whatever the toc said; the version now comes from the toc.
+- Login lines. "Jeefy Shock (main) is online (level 48 Mage, last on 2 days ago)." in your chat frame when a guild member logs in, in the same style as the level-up lines. Never for your own characters, and not for everyone already online when you log in. Settings > "Announce in chat when someone..." > "comes online" turns it off. When the "returns after a break" line applies, it takes over.
+- Nicknames (asked for on CurseForge). The member card has a Nickname field, and `/tabard nick Check Myspeed = Checky` does the same (`= ` with nothing after it clears it). The nickname shows in guild chat after the person's name and after every alt of theirs, in place of the main's name: "[Ooh Woo (Checky)]: hi". It is also on tooltips, the login line and the Members search, is kept on their main, and is shared with the other officers like notes are.
+- Right-click menus. Right-clicking a guild member in the game's guild roster, on their unit frame, in the friends list or on a chat name now has a Tabard section: "Open in Tabard" opens their member card, "Nickname..." sets the nickname. The entries only show for people in the ledger.
+- Usage counts, so Tabard can grow toward what people actually use. Tabard counts how often you open the window (by hand or at login), which pages, how many member cards and which slash commands, and notes which features are on. Only counts and switches, never names, notes or chat. They go with the sharing hello to other Tabard users in your guild, nowhere else (an addon cannot reach the internet). `/tabard users` lists each one's version and what they use; `/tabard usage` shows your own line in a box to copy, for the Tabard thread on Discord or a CurseForge comment. Settings > Sharing and tooltips > "Share which Tabard pages I open..." turns the sharing off.
+
 ## 1.1.4
 
 - The in-game logo (chat prefix, minimap button, window portrait, addon list) is the new gold Tabard mark, matching CurseForge.
