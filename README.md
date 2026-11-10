@@ -19,7 +19,8 @@ usually keeps in their head, and it shares that knowledge between officers autom
 - **Members** and **Former members**: sortable tables with class icons, join dates, main/alt links,
   last online, raid attendance and notes. Click a row for the member card.
 - **Member card**: join date, time in rank, birthday, main and alts, leave of absence, trial votes,
-  strikes, all three notes, actions (promote, demote, remove, ban) and the member's full history.
+  strikes, all three notes, actions (promote, demote, remove, ban) and the member's full history. Right-click a
+  guild member in the game's guild roster, on a unit frame or in chat and choose "Open in Tabard".
 - **Mains and alts**: right-click a member to link them from a searchable list, your own characters are grouped
   automatically, and likely alts show up on the To-do tab with Link and Not alts. Event lines show "(main)" or
   "(alt of X)" after a name, and guild chat shows the main's name after an alt's name.

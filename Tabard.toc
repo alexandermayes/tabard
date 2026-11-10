@@ -18,6 +18,7 @@ Core.lua
 Records.lua
 Scan.lua
 Sync.lua
+Usage.lua
 Tools.lua
 Import.lua
 Welcome.lua

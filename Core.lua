@@ -72,6 +72,7 @@ local DEFAULT_SETTINGS = {
     promoteFromRank = nil,   -- rank index that counts as "newcomer"; nil = the lowest rank
     sync = true,             -- exchange join dates, alts, bans and notes with other Tabard users in the guild
     syncMinRank = 1,         -- accept shared data from members at this rank index or higher (0 = guild leader)
+    shareUsage = true,       -- send this copy's usage counts (pages opened, features on; no names) to Tabard users in the guild
     tooltip = true,          -- add Tabard lines to unit tooltips of guild members
     autoAlts = true,         -- read "alt of X" style notes to link alts
     learnFromGRM = true,     -- keep taking alt groups from Guild Roster Manager's data while it is installed
@@ -605,6 +606,7 @@ SLASH_TABARD1 = "/tabard"
 SlashCmdList["TABARD"] = function(message)
     local command, rest = string.match(message or "", "^%s*(%S*)%s*(.-)%s*$")
     command = string.lower(command or "")
+    if command ~= "" and GL.Usage then pcall(GL.Usage.Command, GL.Usage, command) end
     if command == "" or command == "show" or command == "toggle" then
         if GL.ToggleWindow then GL:ToggleWindow() end
     elseif command == "scan" then
@@ -648,6 +650,10 @@ SlashCmdList["TABARD"] = function(message)
         if GL.KeepCommand then GL:KeepCommand(command == "size" and "" or command) end
     elseif command == "art" or command == "background" or command == "theme" then
         if GL.ArtCommand then GL:ArtCommand(rest) end
+    elseif command == "usage" then
+        if GL.Usage then GL.Usage:ShowOwn() end
+    elseif command == "users" then
+        if GL.Usage then GL.Usage:ShowUsers() end
     elseif command == "status" then
         local guild = GL:Guild()
         if not guild then GL:Print("you are not in a guild.") return end
@@ -659,6 +665,6 @@ SlashCmdList["TABARD"] = function(message)
         GL:Print(string.format("%s: %d members, %d with a join date, %d alt groups, %d bans, %d events recorded, %d scans.",
             guild.name, members, dated, GL:Count(guild.groups), GL:Count(guild.bans), #guild.events, guild.scans or 0))
     else
-        GL:Print("commands: |cffffffff/tabard|r opens the window, |cffffffff/tabard scan|r rescans the roster, |cffffffff/tabard sync|r asks other officers for their data, |cffffffff/tabard import|r previews a GRM import (|cffffffff/tabard import apply|r applies it), |cffffffff/tabard minimap|r toggles the button, |cffffffff/tabard status|r shows what is recorded, |cffffffff/tabard art next|r changes the background, |cffffffff/tabard welcome|r sets up welcome whispers for new members, |cffffffff/tabard shout|r sets up guild chat shoutouts for level milestones, |cffffffff/tabard nick NAME = NICKNAME|r sets what someone goes by in chat.")
+        GL:Print("commands: |cffffffff/tabard|r opens the window, |cffffffff/tabard scan|r rescans the roster, |cffffffff/tabard sync|r asks other officers for their data, |cffffffff/tabard import|r previews a GRM import (|cffffffff/tabard import apply|r applies it), |cffffffff/tabard minimap|r toggles the button, |cffffffff/tabard status|r shows what is recorded, |cffffffff/tabard art next|r changes the background, |cffffffff/tabard welcome|r sets up welcome whispers for new members, |cffffffff/tabard shout|r sets up guild chat shoutouts for level milestones, |cffffffff/tabard nick NAME = NICKNAME|r sets what someone goes by in chat, |cffffffff/tabard users|r lists the other Tabard users in the guild and what they use, |cffffffff/tabard usage|r shows your own usage line to copy.")
     end
 end

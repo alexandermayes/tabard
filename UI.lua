@@ -3281,6 +3281,7 @@ local function buildSettingsPage()
     -- Right: sharing and tooltips.
     local options = {
         { key = "sync", label = "Share join dates, alts, bans and notes with other Tabard users in the guild" },
+        { key = "shareUsage", label = "Share which Tabard pages I open and which features are on (counts only, no names)", default = true },
         { key = "tooltip", label = "Add join date, main and alts to guild members' tooltips" },
         { key = "autoAlts", label = "Read notes like \"alt of Zev\" to link alts automatically" },
         { key = "learnFromGRM", label = "Keep taking alt groups from Guild Roster Manager while it is installed", default = true },
@@ -3306,6 +3307,7 @@ local function buildSettingsPage()
         page.optionDefaults[option.key] = option.default or false
         y = y - 30
     end
+    explain(page.options.shareUsage, "Goes to other Tabard users in this guild with the sharing hello, so whoever maintains Tabard can see what gets used. /tabard usage shows exactly what is sent; /tabard users shows what the others use.")
     page.minimap = makeCheck(page.behaviourBox.body, "Show the minimap button", function(checked) GL.settings.minimap.shown = checked GL:UpdateMinimapButton() end)
     page.minimap:SetPoint("TOPLEFT", page.behaviourBox.body, "TOPLEFT", -4, y)
     y = y - 32
@@ -3981,13 +3983,18 @@ openCard = function(member)
     cardMember = member
     card:Show()
     card.refresh()
+    if GL.Usage then pcall(GL.Usage.Card, GL.Usage) end
 end
 
 -- Tabs ------------------------------------------------------------------------------------------------------
 local TAB_ORDER = { { "overview", "Overview" }, { "todo", "To-do" }, { "log", "Log" }, { "members", "Members" }, { "play", "Play" }, { "former", "Former" }, { "bans", "Bans" }, { "tools", "Tools" }, { "export", "Export" }, { "settings", "Settings" } }
+local TAB_KEYS = {}
+for _, pair in ipairs(TAB_ORDER) do TAB_KEYS[pair[1]] = true end
 
-showPage = function(key)
+-- opened: the window was just opened, so the page counts as viewed even when it was already the current one
+showPage = function(key, opened)
     if not pages[key] then return end
+    if GL.Usage and (opened or key ~= currentPage) then pcall(GL.Usage.Page, GL.Usage, key) end
     currentPage = key
     for name, page in pairs(pages) do
         if name == key then page:Show() else page:Hide() end
@@ -4064,6 +4071,8 @@ end
 
 -- Opens the window on a page: GL:ShowPage("members") etc.
 function GL:ShowPage(key)
+    -- opening straight onto the page, so the page last shown is not counted as viewed on the way
+    if TAB_KEYS[key] and not (frame and frame:IsShown()) then currentPage = key end
     if self:ToggleWindow(true) and pages[key] then showPage(key) end
 end
 
@@ -4101,8 +4110,10 @@ function GL:ToggleWindow(show)
         frame:Hide()
         return false
     end
+    local wasShown = frame:IsShown()
     frame:Show()
-    showPage(currentPage or "overview")
+    if not wasShown and GL.Usage then pcall(GL.Usage.Opened, GL.Usage) end
+    showPage(currentPage or "overview", not wasShown)
     return true
 end
 
@@ -4110,10 +4121,59 @@ end
 -- Like Guild Roster Manager, the window opens by itself after you log in or reload (settings.openOnLogin:
 -- "always" (default), "todo" = only when the to-do list has open items, "never"). It waits a few seconds so
 -- the roster has been read, and never opens in combat.
+-- Guild roster and unit menus -------------------------------------------------------------------------------
+-- Right-clicking a guild member in the Communities roster, on a unit frame, in a friends list or in chat opens
+-- Blizzard's menu; Menu.ModifyMenu (Blizzard_Menu) lets an addon add entries once the stock ones are built. The
+-- entries open the member's Tabard card or set a nickname, and only appear for people in the ledger. Tags are
+-- "MENU_UNIT_" .. the menu name registered in UnitPopupSharedMenus.lua (wow-ui-source, forever branch).
+local MENU_NAMES = { "COMMUNITIES_GUILD_MEMBER", "GUILD", "GUILD_OFFLINE", "PLAYER", "PARTY", "RAID_PLAYER", "FRIEND", "TARGET", "FOCUS", "CHAT_ROSTER" }
+
+local function menuMemberFor(contextData)
+    if type(contextData) ~= "table" then return nil end
+    local name = contextData.name
+    if not GL:IsUsable(name) or type(name) ~= "string" or name == "" then return nil end
+    -- Units come as name and surname ("Zev", "Zev"); the roster passes the whole name ("Zev Zev").
+    local surname = contextData.surname
+    if GL:IsUsable(surname) and type(surname) == "string" and surname ~= "" and not string.find(name, " ", 1, true) then name = name .. " " .. surname end
+    name = GL:ShortName(name)
+    local guild = GL:Guild()
+    if not guild then return nil end
+    return guild.members[name], guild
+end
+
+local function addMenuEntries(ownerRegion, rootDescription, contextData)
+    local member, guild = menuMemberFor(contextData)
+    if not (member and rootDescription and rootDescription.CreateButton) then return end
+    if rootDescription.CreateDivider then rootDescription:CreateDivider() end
+    if rootDescription.CreateTitle then rootDescription:CreateTitle("Tabard") end
+    rootDescription:CreateButton("Open in Tabard", function() GL:OpenMember(member.name) end)
+    rootDescription:CreateButton("Nickname...", function()
+        askText("Nickname for " .. plain(member.name) .. " (shown after their name in guild chat)", GL:Nickname(guild, member) or "", function(text)
+            GL:SetNickname(guild, member, text, "user")
+            GL:RefreshWindow()
+        end)
+    end)
+end
+
+local menusInstalled = false
+function GL:InstallUnitMenus()
+    if menusInstalled then return true end
+    if not (Menu and Menu.ModifyMenu) then return false end
+    menusInstalled = true
+    for _, which in ipairs(MENU_NAMES) do
+        pcall(Menu.ModifyMenu, "MENU_UNIT_" .. which, function(owner, root, contextData)
+            local ok, err = pcall(addMenuEntries, owner, root, contextData)
+            if not ok then GL:Print("could not add the menu entries: " .. tostring(err)) end
+        end)
+    end
+    return true
+end
+
 local loginFrame = CreateFrame("Frame")
 loginFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 loginFrame:SetScript("OnEvent", function(self)
     self:UnregisterEvent("PLAYER_ENTERING_WORLD")
+    pcall(GL.InstallUnitMenus, GL)
     C_Timer.After(6, function()
         local mode = GL.settings and GL.settings.openOnLogin or "always"
         if mode == "never" or not (GL.db and IsInGuild()) then return end
@@ -4124,9 +4184,13 @@ loginFrame:SetScript("OnEvent", function(self)
             local open = 0
             if ok and type(items) == "table" then for _, item in ipairs(items) do if not item.handled then open = open + 1 end end end
             if open == 0 then return end
-            GL:ShowPage("todo")
+            -- opened by itself: counted apart from opening it by hand (Usage.lua)
+            if GL.Usage then GL.Usage.auto = true end
+            pcall(GL.ShowPage, GL, "todo")
         else
-            GL:ToggleWindow(true)
+            if GL.Usage then GL.Usage.auto = true end
+            pcall(GL.ToggleWindow, GL, true)
         end
+        if GL.Usage then GL.Usage.auto = false end
     end)
 end)

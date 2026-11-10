@@ -24,6 +24,8 @@
 --   I  name  nick  by  stamp          nickname (empty text clears it)
 --   S  name  flags  stamp             leave-alone flags, "k" and/or "p"
 --   E  count                          end of an exchange
+--   U  version  usage                 usage counts that follow a hello (Usage.lua; settings.shareUsage); older
+--                                     copies ignore it
 
 local ADDON_NAME, GL = ...
 
@@ -390,6 +392,13 @@ function Sync:Hello(ask, target)
     if not guild then return end
     local since = ask and 0 or self:Since(guild)
     self:Push(table.concat({ "H", GL.version, ask and 1 or 0, since, PROTO }, SEP), target and "WHISPER" or "GUILD", target)
+    -- what this copy is used for travels with the hello (counts and switches only; see Usage.lua)
+    if GL.Usage and GL.Usage:Sharing() then
+        local ok, wire = pcall(GL.Usage.Wire, GL.Usage)
+        if ok and type(wire) == "string" and wire ~= "" then
+            self:Push(table.concat({ "U", clean(GL.version), clean(wire) }, SEP), target and "WHISPER" or "GUILD", target)
+        end
+    end
 end
 
 -- Receiving -------------------------------------------------------------------------------------------------
@@ -552,6 +561,11 @@ local function onMessage(prefix, message, channel, sender)
         if peer and peer.proto ~= PROTO then return end
         if GL.ApplyFirstWeek then pcall(GL.ApplyFirstWeek, GL, guild, first[2], first[3], first[4], first[5], first[6], first[7]) end
         if GL.OnLedgerChanged then GL:OnLedgerChanged(guild) end
+        return
+    end
+    if first[1] == "U" then
+        -- usage counts: taken from any Tabard user in the guild, they only describe the sender's own copy
+        if GL.Usage then pcall(GL.Usage.Receive, GL.Usage, guild, sender, first[2], first[3]) end
         return
     end
     if first[1] == "M" then
