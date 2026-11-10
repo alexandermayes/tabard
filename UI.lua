@@ -3863,18 +3863,40 @@ local function buildCard()
     actions:SetPoint("TOPLEFT", inset, "TOPLEFT", 10, y)
     actions:SetPoint("RIGHT", inset, "RIGHT", -10, 0)
     actions:SetHeight(24)
-    card.promote = makeButton(actions, "Promote", 80, function()
-        local ok, err = GL:GuildAction("promote", cardMember.name)
-        if not ok then GL:Print("could not promote: " .. tostring(err)) else GL:RequestScan(true) end
-    end)
+    -- Promote and Demote are lists of ranks, nearest first (filled in on refresh). The client only has
+    -- one-step promote and demote, so a rank further away is reached one step at a time, 0.6 s apart.
+    local function stepRank(kind, member, steps, rankName)
+        if steps <= 0 then return end
+        local names = {}
+        for i = 1, steps do names[i] = member.name end
+        GL:Print((kind == "promote" and "promoting " or "demoting ") .. plain(member.name) .. " to " .. rankName .. (steps > 1 and (" (" .. steps .. " steps)") or "") .. "...")
+        GL:GuildActionMany(kind, names, function(done, failed)
+            if #failed > 0 then GL:Print("could not " .. kind .. ": " .. failed[1]) end
+            GL:RequestScan(true)
+        end)
+    end
+    card.promoteItems, card.demoteItems = {}, {}
+    card.promote = createFilter(actions, "Promote", card.promoteItems, 84)
     card.promote:SetPoint("LEFT")
-    explain(card.promote, function(self) return self:IsEnabled() and "Promote one rank." or "Your rank cannot promote this member, or they are already at the top." end)
-    card.demote = makeButton(actions, "Demote", 80, function()
-        local ok, err = GL:GuildAction("demote", cardMember.name)
-        if not ok then GL:Print("could not demote: " .. tostring(err)) else GL:RequestScan(true) end
-    end)
+    explain(card.promote, function(self) return self:IsEnabled() and "Pick the rank to promote to." or "Your rank cannot promote this member, or they are already at the top." end)
+    card.demote = createFilter(actions, "Demote", card.demoteItems, 84)
     card.demote:SetPoint("LEFT", card.promote, "RIGHT", 4, 0)
-    explain(card.demote, function(self) return self:IsEnabled() and "Demote one rank." or "Your rank cannot demote this member, or they are already at the bottom." end)
+    explain(card.demote, function(self) return self:IsEnabled() and "Pick the rank to demote to." or "Your rank cannot demote this member, or they are already at the bottom." end)
+    card.fillRankMenus = function(guild, member)
+        for _, list in ipairs({ card.promoteItems, card.demoteItems }) do for i = #list, 1, -1 do list[i] = nil end end
+        local current = member.rankIndex
+        if not (guild and current) then return end
+        local top = 0
+        for index in pairs(guild.ranks or {}) do if type(index) == "number" and index > top then top = index end end
+        for i = current - 1, 1, -1 do   -- never to guild leader (0)
+            local name = guild.ranks[i] or ("rank " .. i)
+            card.promoteItems[#card.promoteItems + 1] = { text = name, action = function() stepRank("promote", member, current - i, name) end }
+        end
+        for i = current + 1, top do
+            local name = guild.ranks[i] or ("rank " .. i)
+            card.demoteItems[#card.demoteItems + 1] = { text = name, action = function() stepRank("demote", member, i - current, name) end }
+        end
+    end
     card.kick = makeButton(actions, "Remove", 80, function()
         confirm("Remove " .. cardMember.name .. " from the guild?", function()
             local ok, err = GL:GuildAction("kick", cardMember.name)
@@ -4036,8 +4058,9 @@ local function buildCard()
         fill(card.nick, GL:Nickname(guild, member), true)
         card.safeKick:SetChecked(GL:IsSafe(member, "kick"))
         card.safePromote:SetChecked(GL:IsSafe(member, "promote"))
-        card.promote:SetEnabled(not former and GL:CanPromote() and (member.rankIndex or 0) > 1)
-        card.demote:SetEnabled(not former and GL:CanDemote() and (member.rankIndex or 0) > 0)
+        card.fillRankMenus(guild, member)
+        if card.promote.SetEnabled then card.promote:SetEnabled(not former and GL:CanPromote() and #card.promoteItems > 0) end
+        if card.demote.SetEnabled then card.demote:SetEnabled(not former and GL:CanDemote() and #card.demoteItems > 0) end
         card.kick:SetEnabled(not former and GL:CanRemove() and (member.rankIndex or 0) > 0)
         card.ban:SetText(GL:IsBanned(guild, member.name) and "Lift ban" or "Ban")
         local rows = {}

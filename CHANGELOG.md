@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.5
+
+- Promote and Demote on the member card are lists of ranks, nearest first, instead of one-step buttons. Pick the rank and Tabard steps the member there (the client only has one-step promote and demote, so a rank two away takes two steps, 0.6 seconds apart; the chat line says so). Never to guild leader.
+
 ## 1.2.4
 
 - A small login card instead of the whole window. A few seconds after you log in, a card the size of a tooltip lists what changed while you were away (the same lines as the Overview, each a link), how many to-do items are open, and an "Open Tabard" button. It only shows when there is something on it, and the whole window replaces it. It is the new default for "When I log in or reload" in Settings; "Open the window" is still there if you prefer it.
