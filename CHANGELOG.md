@@ -2,9 +2,9 @@
 
 ## 1.1.2
 
-- Guild chat shoutouts sound like a guildie cheering now instead of a polite bot: "GZZZ AUREY!! LEVEL 20!!", "AUREY HIT 40!!! MOUNT TIME!!", "LOOK WHO'S BACK!! HI AUREY!!". Every stock pool (milestones, other levels, promotions, welcome-backs) was rewritten.
+- Guild chat shoutouts sound like a guildie cheering now instead of a polite bot: "GZZZ AUREY 10!!", "AUREY 40!!! MOUNT TIME", "LOOK WHO'S BACK!! hi Aurey <3". The lines follow a read of real Forever guild chat: short, no full stops, capitals and stretched letters for the hype, the rest lowercase with a :D or <3. Every stock pool (milestones, other levels, promotions, welcome-backs) was rewritten.
 - New placeholders `{NAME}` and `{RANK}` put the name or rank in capitals. The line editor lists them.
-- The "how long it took" fact only shows up for a real stretch (five levels or more), so no more "9 to 10 in under a day". It reads "10 to 20 in 2 days" now.
+- The "how long it took" fact only shows up for a real stretch (five levels or more), so no more "9 to 10 in under a day". Facts go in brackets at the end: "AUREY 20!! (10 to 20 in 2 days)".
 - Lines you wrote yourself are untouched; only the stock pools changed.
 
 ## 1.1.1

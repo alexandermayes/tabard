@@ -12,67 +12,69 @@ GL.Shout = Shout
 local MAX_BYTES = 255
 local MAX_LEVEL = 60
 
--- Pools by milestone, written like a guildie cheering in gchat: capitals for the hype, a lowercase tail.
--- {name} and {level} are filled in, {NAME} is the name in capitals; a fact is appended when one fits.
+-- Pools by milestone, written the way people actually type in gchat (from a read of real Forever chat):
+-- short, no full stops, capitals and stretched letters for the hype ("OO WOO 30", "noiceeee"), the rest
+-- lowercase with a :D or <3. {name} and {level} are filled in, {NAME} is the name in capitals; a fact is
+-- added in brackets when one fits.
 local LINES = {
     [10] = {
-        "GZZZ {NAME}!! LEVEL 10!!",
-        "{NAME} HIT 10!!! TALENTS UNLOCKED",
-        "LETS GOOO {NAME}!! double digits",
-        "10!!! GZ {NAME}, deadmines soon",
+        "GZZZ {NAME} 10!!",
+        "{NAME} HIT 10 LETS GOOO",
+        "HELL YEAH {NAME}!! talents unlocked",
+        "10!!! gz {name} :D",
     },
     [20] = {
-        "GZZZ {NAME}!! LEVEL 20!!",
-        "{NAME} IS 20!!! LETS GOOOO",
-        "TWENTY!! GZ {NAME}",
-        "{NAME} HIT 20!! WC and SFK are calling",
+        "{NAME} 20!!",
+        "GZZZZ {NAME}!! LEVEL 20",
+        "LETS GOOO {NAME} 20 <3",
+        "{NAME} HIT 20!! WC and SFK time",
     },
     [30] = {
-        "GZZZ {NAME}!! LEVEL 30!!",
-        "{NAME} HIT 30!!! halfway in levels (not in xp lol)",
-        "THIRTY!! GZ {NAME}",
-        "LETS GOOO {NAME}!! 30!! SM time",
+        "{NAME} 30!!!",
+        "GZZZ {NAME} LEVEL 30",
+        "HELL YEAH {NAME}!! halfway in levels, not in xp lol",
+        "LETS GOOO {NAME} 30!! SM time",
     },
     [40] = {
-        "{NAME} HIT 40!!! MOUNT TIME!!",
-        "GZZZ {NAME}!! LEVEL 40!! no more walking",
-        "40!!! GZ {NAME}, go get that mount",
-        "LETS GOOOO {NAME}!! 40!!",
+        "{NAME} 40!!! MOUNT TIME",
+        "GZZZZ {NAME}!! no more walking",
+        "HELL YEAH {NAME} 40!! go get that mount",
+        "LETS GOOOO {NAME} 40 <3",
     },
     [50] = {
-        "GZZZ {NAME}!! LEVEL 50!!",
-        "{NAME} HIT 50!!! 10 more",
-        "FIFTY!! GZ {NAME}, home stretch",
-        "LETS GOOO {NAME}!! 50!! BRD is waiting",
+        "{NAME} 50!!!",
+        "GZZZ {NAME} LEVEL 50!! home stretch",
+        "LETS GOOO {NAME}!! 10 more",
+        "HELL YEAH {NAME} 50!! BRD time",
     },
     [60] = {
-        "{NAME} HIT 60!!!! GZZZZ",
-        "GZZZZ {NAME}!!! LEVEL 60!!!",
-        "SIXTY!!! {NAME} DID IT!!",
-        "LETS GOOOOO {NAME}!! 60!!!",
-        "GZ {NAME}!!! 60!!! attunements next, ask in gchat",
-        "{NAME} IS 60!!! GZ GZ GZ",
+        "{NAME} 60!!!! GZZZZ",
+        "GZZZZZ {NAME}!!! LEVEL 60",
+        "HELL YEAH {NAME}!! 60!!! <3",
+        "LETS GOOOOO {NAME} 60!!!",
+        "{NAME} DID IT!! 60!!! attunements next, ask in gchat",
+        "SIXTY!!! gz gz gz {name} :D",
     },
 }
 
 -- Used for levels without a pool of their own (every-level mode, or custom milestones).
 local ANY_LINES = {
-    "GZ {NAME}!! {level}!!",
-    "DING {level} FOR {NAME}!!",
-    "{NAME} HIT {level}!! GZ",
-    "GZZ {NAME}!! {level}",
+    "gz {name}!!",
+    "GZ {NAME} {level}!!",
+    "{NAME} {level} LETS GOOO",
+    "ding {level} gz {name} :D",
 }
 
 local PROMOTE_LINES = {
-    "GZ ON THE PROMO {NAME}!! {rank} now",
-    "{NAME} IS {RANK} NOW!!! well earned",
-    "PROMO!! GZ {NAME}, welcome to {rank}",
+    "gz on the promo {name}!! <3",
+    "{NAME} IS {RANK}!! hell yeah",
+    "welcome to {rank} {name} :D",
 }
 
 local BACK_LINES = {
-    "{NAME} IS BACK!!! been {away}, welcome back",
-    "LOOK WHO'S BACK!! HI {NAME}!! gone {away}",
-    "WB {NAME}!!! it's been {away}",
+    "{NAME}!!! wb :D",
+    "LOOK WHO'S BACK!! hi {name} <3",
+    "wb {name}!! been {away} lol",
 }
 
 local DEFAULTS = {
@@ -268,8 +270,8 @@ function Shout:Compose(template, item, facts, rotate)
         local start = ((rotate or 1) - 1) % #facts
         for k = 0, #facts - 1 do
             local fact = facts[((start + k) % #facts) + 1]
-            local joiner = string.find(text, "[%.!]$") and " " or ". "
-            local candidate = text .. joiner .. fact
+            -- In brackets, the way people tack an aside onto a chat line (no full stop in the middle).
+            local candidate = text .. " (" .. fact .. ")"
             if #candidate <= MAX_BYTES then text = candidate break end
         end
     end
