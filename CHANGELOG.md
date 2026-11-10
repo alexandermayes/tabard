@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.4
+
+- The in-game logo (chat prefix, minimap button, window portrait, addon list) is the new gold Tabard mark, matching CurseForge.
+
 ## 1.1.3
 
 - Promotion shoutouts read right: "MORUU IS A YIKER!! hell yeah" instead of "MORUU IS YIKER!!". The new `{a rank}` placeholder puts "a" or "an" before the rank ("a Raider", "an Officer"), and `{A RANK}` does the same in capitals.
