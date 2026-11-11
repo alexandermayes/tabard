@@ -9,10 +9,16 @@
 
 local ADDON_NAME, GL = ...
 
-local HANDOFF_WINDOW = 150          -- seconds between one character logging off and the next logging on
-local HANDOFF_KEEP = 400            -- transitions remembered per guild
+-- Handoffs: one character logs off and another logs on. A real switch is quick (character select and a
+-- loading screen), so the gap sets the weight, and the weight is shared out when several people logged on in
+-- the same window, because in a busy guild most "right after" pairs are coincidence. One handoff is never
+-- enough by itself; two are, and two in opposite directions are the signature of one player switching.
+local HANDOFF_WINDOW = 150          -- seconds; beyond this a login is not a handoff at all
+local HANDOFF_QUICK = 45            -- a real character switch: full weight
+local HANDOFF_MEDIUM = 90           -- plausible: medium weight
+local HANDOFF_KEEP = 600            -- transitions remembered per guild
 local HANDOFF_DAYS = 45             -- how far back handoffs count
-local MIN_SCORE = 3                 -- one stem match or note mention, or two handoffs
+local MIN_SCORE = 4                 -- two quick unambiguous handoffs, or one plus a name match, or a strong name match plus a note
 
 local cache = setmetatable({}, { __mode = "k" })   -- guild -> suggestion cache (never saved)
 
@@ -159,64 +165,150 @@ function GL:AcceptAltPair(guild, member, other)
     return ok
 end
 
--- item = { key, member (the likely alt), other (the likely main or one of its alts), reason, score, since }
+local function secondWord(name)
+    return string.lower(string.match(name or "", "^%S+%s+(%S+)") or "")
+end
+
+local function commonPrefix(a, b)
+    local n = 0
+    for i = 1, math.min(#a, #b) do
+        if string.sub(a, i, i) == string.sub(b, i, i) then n = i else break end
+    end
+    return n
+end
+
+-- The stretches each character was online, from the transition log plus the roster now: { name = { {from, to}, ... } }.
+-- Two characters online at the same moment are two players, whatever else looks alike.
+local function onlineSpans(guild, list, now)
+    local spans, open = {}, {}
+    for _, entry in ipairs(list) do
+        if entry.on then
+            open[entry.n] = entry.t
+        elseif open[entry.n] then
+            spans[entry.n] = spans[entry.n] or {}
+            local s = spans[entry.n]
+            s[#s + 1] = { open[entry.n], entry.t }
+            open[entry.n] = nil
+        end
+    end
+    for name, from in pairs(open) do
+        spans[name] = spans[name] or {}
+        local s = spans[name]
+        s[#s + 1] = { from, now }
+    end
+    for name, member in pairs(guild.members) do
+        if member.online and not open[name] then
+            spans[name] = spans[name] or {}
+            local s = spans[name]
+            s[#s + 1] = { now, now }
+        end
+    end
+    return spans
+end
+
+local function overlap(sa, sb)
+    if not (sa and sb) then return false end
+    for _, x in ipairs(sa) do
+        for _, y in ipairs(sb) do
+            if x[1] < y[2] and y[1] < x[2] then return true end
+        end
+    end
+    return false
+end
+
+-- item = { key, member (the likely alt), other (the likely main or one of its alts), reason, score, confidence, since }
+-- confidence: "likely" or "possible". Scores: a quick unambiguous handoff is 3, medium 2, slow 1, each divided
+-- among the people who logged on in the same window; handoffs count only once there are two of them, and both
+-- directions add 2. Same first name or surname 3, a 5+ letter shared start 2, a note naming the other 3.
+-- A pair ever seen online together is dropped for good, and each character keeps only its best pairing.
 function GL:AltSuggestions(guild, now)
     if not guild then return {} end
     now = now or self:Now()
     local groupsCount = self:Count(guild.groups)
     local cached = cache[guild]
     if cached and cached.scans == guild.scans and cached.groups == groupsCount and now - cached.t < 60 then return cached.items end
-    local dismissed = guild.notAlts or {}
+    guild.notAlts = guild.notAlts or {}
+    local dismissed = guild.notAlts
     local found, order = {}, {}
-    local function consider(a, b, score, reason, since)
-        if a == b then return end
+    local function entryFor(a, b, since)
+        if a == b then return nil end
         local ma, mb = guild.members[a], guild.members[b]
-        if not (ma and mb) then return end
-        if self:GroupOf(guild, ma) and self:GroupOf(guild, mb) then return end   -- both sorted already
+        if not (ma and mb) then return nil end
+        if self:GroupOf(guild, ma) and self:GroupOf(guild, mb) then return nil end   -- both sorted already
         local key = self:AltPairKey(a, b)
-        if dismissed[key] then return end
+        if dismissed[key] then return nil end
         local entry = found[key]
         if not entry then
-            entry = { key = key, a = a, b = b, score = 0, reasons = {}, seen = {}, since = since or now }
+            entry = { key = key, a = a, b = b, score = 0, reasons = {}, since = since or now,
+                handoff = 0, handoffs = 0, quick = 0, directions = {} }
             found[key] = entry
             order[#order + 1] = entry
         end
-        entry.score = entry.score + score
-        if not entry.seen[reason] then entry.seen[reason] = true entry.reasons[#entry.reasons + 1] = reason end
         if since and since < entry.since then entry.since = since end
+        return entry
     end
 
-    -- 1. One logs off, the other logs on within a couple of minutes. Each time counts 2.
+    -- 1. Handoffs, weighted by how quick and how unambiguous each one was.
     local list = guild.handoffs or {}
     local oldest = now - HANDOFF_DAYS * 86400
     for i = 1, #list do
         local off = list[i]
         if not off.on and off.t >= oldest then
+            local candidates, seen = {}, {}
             for j = i + 1, #list do
                 local on = list[j]
                 if on.t - off.t > HANDOFF_WINDOW then break end
-                if on.on and on.n ~= off.n then consider(off.n, on.n, 2, "logs in right after the other logs off", off.t) end
+                if on.on and on.n ~= off.n and not seen[on.n] then seen[on.n] = true candidates[#candidates + 1] = on end
+            end
+            -- how many others logged off just before each login: the login side of the ambiguity
+            for _, on in ipairs(candidates) do
+                local offs = 0
+                for j = i, 1, -1 do
+                    local other = list[j]
+                    if on.t - other.t > HANDOFF_WINDOW then break end
+                    if not other.on and other.n ~= on.n then offs = offs + 1 end
+                end
+                local gap = on.t - off.t
+                local weight = gap <= HANDOFF_QUICK and 3 or gap <= HANDOFF_MEDIUM and 2 or 1
+                local entry = entryFor(off.n, on.n, off.t)
+                if entry then
+                    entry.handoff = entry.handoff + weight / math.max(#candidates, offs, 1)
+                    entry.handoffs = entry.handoffs + 1
+                    if gap <= HANDOFF_QUICK then entry.quick = entry.quick + 1 end
+                    entry.directions[off.n] = true
+                end
             end
         end
     end
+    for _, entry in ipairs(order) do
+        if entry.handoffs >= 2 then
+            local both = entry.directions[entry.a] and entry.directions[entry.b]
+            entry.score = entry.score + math.min(entry.handoff, 9) + (both and 2 or 0)
+            local text = entry.handoffs .. (entry.quick == entry.handoffs and " quick handoffs" or " handoffs")
+            entry.reasons[#entry.reasons + 1] = both and (text .. ", both ways") or text
+        end
+    end
 
-    -- 2. Names that share a stem; 3. a note that mentions another member.
-    local names, stems = {}, {}
-    for name in pairs(guild.members) do names[#names + 1] = name stems[name] = firstWord(name) end
+    -- 2. Names; 3. a note that names the other member.
+    local names, firsts, seconds = {}, {}, {}
+    for name in pairs(guild.members) do names[#names + 1] = name firsts[name] = firstWord(name) seconds[name] = secondWord(name) end
     table.sort(names)
     for _, name in ipairs(names) do
         local member = guild.members[name]
         if not self:GroupOf(guild, member) then
-            local stem = stems[name]
-            if #stem >= 4 then
-                for _, otherName in ipairs(names) do
-                    local otherStem = stems[otherName]
-                    if otherName ~= name and #otherStem >= 4 then
-                        if string.sub(stem, 1, 4) == string.sub(otherStem, 1, 4) then
-                            consider(name, otherName, 3, "names share a stem")
-                        elseif #stem >= 6 and #otherStem >= 6 and string.sub(stem, -4) == string.sub(otherStem, -4) then
-                            consider(name, otherName, 2, "names share an ending")
-                        end
+            local first, second = firsts[name], seconds[name]
+            for _, otherName in ipairs(names) do
+                if otherName > name or self:GroupOf(guild, guild.members[otherName]) then   -- each unsorted pair once; a sorted other is fine
+                    local otherFirst, otherSecond = firsts[otherName], seconds[otherName]
+                    local score, reason
+                    if #first >= 4 and first == otherFirst then score, reason = 3, "same first name"
+                    elseif #second >= 4 and second == otherSecond then score, reason = 3, "same surname"
+                    elseif #first >= 5 and #otherFirst >= 5 and commonPrefix(first, otherFirst) >= 5 then score, reason = 2, "names start alike"
+                    elseif #first >= 4 and #otherFirst >= 4 and commonPrefix(first, otherFirst) >= 4 then score, reason = 1, "names start alike"
+                    end
+                    if score and otherName ~= name then
+                        local entry = entryFor(name, otherName)
+                        if entry then entry.score = entry.score + score entry.reasons[#entry.reasons + 1] = reason entry.nameOnly = (score < 3) end
                     end
                 end
             end
@@ -224,9 +316,10 @@ function GL:AltSuggestions(guild, now)
                 if type(text) == "string" and #text >= 4 then
                     local lower = string.lower(text)
                     for _, otherName in ipairs(names) do
-                        local otherStem = stems[otherName]
-                        if otherName ~= name and #otherStem >= 4 and string.find(lower, "%f[%a]" .. escapePattern(otherStem) .. "%f[%A]") then
-                            consider(name, otherName, 3, "note mentions " .. otherName)
+                        local otherFirst = firsts[otherName]
+                        if otherName ~= name and #otherFirst >= 4 and string.find(lower, "%f[%a]" .. escapePattern(otherFirst) .. "%f[%A]") then
+                            local entry = entryFor(name, otherName)
+                            if entry then entry.score = entry.score + 3 entry.reasons[#entry.reasons + 1] = "note mentions " .. otherName end
                         end
                     end
                 end
@@ -234,19 +327,35 @@ function GL:AltSuggestions(guild, now)
         end
     end
 
+    -- Seen online together: not the same player. Dropped for good, like "Not alts".
+    local spans = onlineSpans(guild, list, now)
     local items = {}
     for _, entry in ipairs(order) do
         if entry.score >= MIN_SCORE then
-            local ma, mb = guild.members[entry.a], guild.members[entry.b]
-            local member, other
-            if self:GroupOf(guild, mb) then member, other = ma, mb
-            elseif self:GroupOf(guild, ma) then member, other = mb, ma
-            elseif (ma.level or 0) > (mb.level or 0) then member, other = mb, ma
-            else member, other = ma, mb end
-            items[#items + 1] = { key = entry.key, member = member, other = other, score = entry.score, reason = table.concat(entry.reasons, "; "), since = entry.since }
+            if overlap(spans[entry.a], spans[entry.b]) then
+                dismissed[entry.key] = now
+            else
+                local ma, mb = guild.members[entry.a], guild.members[entry.b]
+                local member, other
+                if self:GroupOf(guild, mb) then member, other = ma, mb
+                elseif self:GroupOf(guild, ma) then member, other = mb, ma
+                elseif (ma.level or 0) > (mb.level or 0) then member, other = mb, ma
+                else member, other = ma, mb end
+                items[#items + 1] = { key = entry.key, member = member, other = other, score = entry.score,
+                    confidence = entry.score >= 7 and "likely" or "possible",
+                    reason = table.concat(entry.reasons, ", "), since = entry.since }
+            end
         end
     end
     table.sort(items, function(x, y) if x.score ~= y.score then return x.score > y.score end return x.key < y.key end)
-    cache[guild] = { scans = guild.scans, groups = groupsCount, t = now, items = items }
-    return items
+    -- One pairing per character: the best one wins, the rest wait until it is answered.
+    local taken, kept = {}, {}
+    for _, item in ipairs(items) do
+        if not taken[item.member.name] then
+            taken[item.member.name] = true
+            kept[#kept + 1] = item
+        end
+    end
+    cache[guild] = { scans = guild.scans, groups = groupsCount, t = now, items = kept }
+    return kept
 end

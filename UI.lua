@@ -2990,7 +2990,7 @@ end
 local WELCOME_DEFAULTS = { enabled = false, delay = 8, mode = "click", minRank = 1 }
 local SHOUT_DEFAULTS = { enabled = false, levels = "10 20 30 40 50 60", every = false, promote = false, back = false, delay = 10, mode = "click", minRank = 0, nameStyle = "firstlower" }
 local NAME_STYLES = { firstlower = "first name, lowercase (zev)", first = "first name (Zev)", full = "full name (Zev Zev)", fulllower = "full name, lowercase (zev zev)" }
-local LOGIN_LABELS = { card = "Show a small since-your-last-visit card", always = "Open the window", todo = "Open it when the to-do list has items", never = "Stay closed" }
+local LOGIN_LABELS = { card = "Show the login card", always = "Open the window", todo = "Open it if the to-do list has items", never = "Stay closed" }
 local LOGIN_DEFAULT = "card"
 local NOTE_DATE_LABELS = { none = "Nothing", public = "The public note", officer = "The officer note" }
 
@@ -3863,27 +3863,70 @@ local function buildCard()
     actions:SetPoint("TOPLEFT", inset, "TOPLEFT", 10, y)
     actions:SetPoint("RIGHT", inset, "RIGHT", -10, 0)
     actions:SetHeight(24)
-    card.promote = makeButton(actions, "Promote", 80, function()
-        local ok, err = GL:GuildAction("promote", cardMember.name)
-        if not ok then GL:Print("could not promote: " .. tostring(err)) else GL:RequestScan(true) end
+    -- Guild actions. On this client an addon may not promote, demote or remove by itself (the game raises
+    -- ADDON_ACTION_FORBIDDEN), but a click on a secure button that runs "/gpromote Name" is the player's own
+    -- act and goes through. So Promote and Demote are lists of ranks (nearest first) and Remove is a button,
+    -- and each of them arms one secure "Promote Zev Zev to Raider" button in place of the row, which the next
+    -- click fires. Cancel, or opening another member, disarms it. A rank further away is several lines of
+    -- the same command, since the client only has one-step promote and demote.
+    local SLASH = { promote = "/gpromote", demote = "/gdemote", kick = "/gremove" }
+    local armed = CreateFrame("Frame", nil, card)
+    armed:SetAllPoints(actions)   -- made after the row's buttons, so it draws over them while armed
+    armed:Hide()
+    card.armed = armed
+    armed.go = CreateFrame("Button", "TabardUIMemberGoButton", armed, "SecureActionButtonTemplate, UIPanelButtonTemplate")
+    armed.go:SetSize(256, 22)
+    armed.go:SetPoint("LEFT")
+    armed.go:RegisterForClicks("LeftButtonUp")
+    armed.go:SetAttribute("useOnKeyDown", false)
+    armed.go:SetAttribute("type", "macro")
+    armed.go:HookScript("OnClick", function()
+        if armed.what then GL:Print(armed.what .. ".") end
+        armed.member = nil
+        armed:Hide()
+        GL:RequestScan(true)
+        C_Timer.After(2, function() GL:RequestScan(true) end)
     end)
+    explain(armed.go, "Click to do it. The game only lets you, not an addon, change ranks and membership, so this button runs the command as your own click.")
+    armed.cancel = makeButton(armed, "Cancel", 80, function() armed.member = nil armed:Hide() end)
+    armed.cancel:SetPoint("RIGHT")
+    local function armAction(kind, member, steps, rankName)
+        if InCombatLockdown and InCombatLockdown() then GL:Print("not in combat; try again afterwards.") return end
+        local lines = {}
+        for i = 1, steps do lines[i] = SLASH[kind] .. " " .. plain(member.name) end
+        armed.go:SetAttribute("macrotext", table.concat(lines, "\n"))
+        local label = kind == "kick" and ("Remove " .. plain(member.name)) or ((kind == "promote" and "Promote " or "Demote ") .. plain(member.name) .. " to " .. rankName)
+        armed.go:SetText(label .. (steps > 1 and (" (" .. steps .. " steps)") or ""))
+        armed.what = (kind == "kick" and "removed " or (kind == "promote" and "promoted " or "demoted ")) .. plain(member.name) .. (rankName and (" to " .. rankName) or "")
+        armed.member = member
+        armed:Show()
+    end
+    card.promoteItems, card.demoteItems = {}, {}
+    card.promote = createFilter(actions, "Promote", card.promoteItems, 82)
     card.promote:SetPoint("LEFT")
-    explain(card.promote, function(self) return self:IsEnabled() and "Promote one rank." or "Your rank cannot promote this member, or they are already at the top." end)
-    card.demote = makeButton(actions, "Demote", 80, function()
-        local ok, err = GL:GuildAction("demote", cardMember.name)
-        if not ok then GL:Print("could not demote: " .. tostring(err)) else GL:RequestScan(true) end
-    end)
+    explain(card.promote, function(self) return self:IsEnabled() and "Pick the rank to promote to." or "Your rank cannot promote this member, or they are already at the top." end)
+    card.demote = createFilter(actions, "Demote", card.demoteItems, 78)
     card.demote:SetPoint("LEFT", card.promote, "RIGHT", 4, 0)
-    explain(card.demote, function(self) return self:IsEnabled() and "Demote one rank." or "Your rank cannot demote this member, or they are already at the bottom." end)
-    card.kick = makeButton(actions, "Remove", 80, function()
-        confirm("Remove " .. cardMember.name .. " from the guild?", function()
-            local ok, err = GL:GuildAction("kick", cardMember.name)
-            if not ok then GL:Print("could not remove: " .. tostring(err)) else GL:RequestScan(true) end
-        end)
-    end)
+    explain(card.demote, function(self) return self:IsEnabled() and "Pick the rank to demote to." or "Your rank cannot demote this member, or they are already at the bottom." end)
+    card.fillRankMenus = function(guild, member)
+        for _, list in ipairs({ card.promoteItems, card.demoteItems }) do for i = #list, 1, -1 do list[i] = nil end end
+        local current = member.rankIndex
+        if not (guild and current) then return end
+        local top = 0
+        for index in pairs(guild.ranks or {}) do if type(index) == "number" and index > top then top = index end end
+        for i = current - 1, 1, -1 do   -- never to guild leader (0)
+            local name = guild.ranks[i] or ("rank " .. i)
+            card.promoteItems[#card.promoteItems + 1] = { text = name, action = function() armAction("promote", member, current - i, name) end }
+        end
+        for i = current + 1, top do
+            local name = guild.ranks[i] or ("rank " .. i)
+            card.demoteItems[#card.demoteItems + 1] = { text = name, action = function() armAction("demote", member, i - current, name) end }
+        end
+    end
+    card.kick = makeButton(actions, "Remove", 70, function() armAction("kick", cardMember, 1, nil) end)
     card.kick:SetPoint("LEFT", card.demote, "RIGHT", 4, 0)
-    explain(card.kick, function(self) return self:IsEnabled() and "Remove from the guild (asks first)." or "Your rank cannot remove this member." end)
-    card.ban = makeButton(actions, "Ban", 80, function()
+    explain(card.kick, function(self) return self:IsEnabled() and "Remove from the guild. A red button appears to confirm it." or "Your rank cannot remove this member." end)
+    card.ban = makeButton(actions, "Ban", 60, function()
         local guild = guildOf()
         if GL:IsBanned(guild, cardMember.name) then
             confirm("Lift the ban on " .. cardMember.name .. "?", function() GL:Unban(guild, cardMember.name, "user") GL:RefreshWindow() end)
@@ -4036,8 +4079,10 @@ local function buildCard()
         fill(card.nick, GL:Nickname(guild, member), true)
         card.safeKick:SetChecked(GL:IsSafe(member, "kick"))
         card.safePromote:SetChecked(GL:IsSafe(member, "promote"))
-        card.promote:SetEnabled(not former and GL:CanPromote() and (member.rankIndex or 0) > 1)
-        card.demote:SetEnabled(not former and GL:CanDemote() and (member.rankIndex or 0) > 0)
+        card.fillRankMenus(guild, member)
+        if card.armed.member ~= member then card.armed.member = nil card.armed:Hide() end
+        if card.promote.SetEnabled then card.promote:SetEnabled(not former and GL:CanPromote() and #card.promoteItems > 0) end
+        if card.demote.SetEnabled then card.demote:SetEnabled(not former and GL:CanDemote() and #card.demoteItems > 0) end
         card.kick:SetEnabled(not former and GL:CanRemove() and (member.rankIndex or 0) > 0)
         card.ban:SetText(GL:IsBanned(guild, member.name) and "Lift ban" or "Ban")
         local rows = {}
@@ -4276,8 +4321,8 @@ end
 -- while you were away, as on the Overview, how many to-do items are open, and a button for the whole window.
 -- It only shows when there is something on it, and goes away when the window opens.
 local loginCard
-local LOGIN_ROWS = 6
-local LOGIN_WIDTH = 400
+local LOGIN_ROWS = 8
+local LOGIN_WIDTH = 560   -- wide enough that the lines are not cut short
 
 local function buildLoginCard()
     local inset

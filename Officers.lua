@@ -326,8 +326,8 @@ function GL:TodoItems(guild, now)
     local okAlts, suggestions = pcall(function() return self.AltSuggestions and self:AltSuggestions(guild, now) or {} end)
     if okAlts and type(suggestions) == "table" then
         for i, s in ipairs(suggestions) do
-            if i > 25 then break end
-            add("alts:" .. s.key, "altpair", s.member, "Probably an alt of " .. self:ColoredName(s.other) .. " (" .. s.reason .. ")", s.since)
+            if i > 6 then break end   -- the strongest few; the rest come up as these are answered
+            add("alts:" .. s.key, "altpair", s.member, (s.confidence == "likely" and "Likely an alt of " or "Possibly an alt of ") .. self:ColoredName(s.other) .. " (" .. s.reason .. ")", s.since)
             items[#items].other = s.other
         end
     end

@@ -131,18 +131,31 @@ frame:SetScript("OnEvent", function(self, event, isLogin, isReload)
         if guild then guild.lastVisit = GL:Now() end
     elseif event == "PLAYER_ENTERING_WORLD" then
         self:UnregisterEvent("PLAYER_ENTERING_WORLD")
-        if not isLogin then return end
-        captureVisit()   -- the guild may not be known this early; the timer below tries again
-        -- Wait for the first roster read so joins and leaves since the logout are recorded first.
-        C_Timer.After(12, function()
-            captureVisit()
+        if isLogin then
+            -- One line at login like other addons print, and what changed when the CurseForge app updated us.
+            local db = GL.db
+            local previous = db and db.loadedVersion
+            if db then db.loadedVersion = GL.version end
+            if previous and previous ~= GL.version then
+                GL:Print("updated to " .. GL.version .. " (from " .. previous .. "): " .. (GL.whatsNew or "see the changelog on CurseForge") .. ". |cffffffff/tabard|r opens the window.")
+            else
+                GL:Print(GL.version .. " loaded. |cffffffff/tabard|r opens the window.")
+            end
+            captureVisit()   -- the guild may not be known this early; the timer below tries again
+        end
+        -- Wait for the first roster read so joins and leaves since the logout are recorded first. After a
+        -- reload the marker is the one from login, so the summary line repeats; the long report does not.
+        C_Timer.After(isLogin and 12 or 6, function()
+            if isLogin then captureVisit() end
             local guild = GL.db and IsInGuild() and GL:Guild()
             if not guild then return end
             local counts = GL:SinceLastVisit(guild)
             local text = GL:AwayText(counts)
             if text ~= "" then
                 GL:Print("since you were last here (" .. GL:Ago(counts.since) .. "): " .. text .. ". |cffffffff/tabard|r for the log.")
-                if GL.settings.loginReport ~= false then pcall(GL.PrintLoginReport, GL, guild) end
+                if isLogin and GL.settings.loginReport ~= false then pcall(GL.PrintLoginReport, GL, guild) end
+            elseif counts then
+                GL:Print("nothing has changed since you were last here (" .. GL:Ago(counts.since) .. ").")
             end
         end)
     end
