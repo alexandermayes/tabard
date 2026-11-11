@@ -2990,7 +2990,7 @@ end
 local WELCOME_DEFAULTS = { enabled = false, delay = 8, mode = "click", minRank = 1 }
 local SHOUT_DEFAULTS = { enabled = false, levels = "10 20 30 40 50 60", every = false, promote = false, back = false, delay = 10, mode = "click", minRank = 0, nameStyle = "firstlower" }
 local NAME_STYLES = { firstlower = "first name, lowercase (zev)", first = "first name (Zev)", full = "full name (Zev Zev)", fulllower = "full name, lowercase (zev zev)" }
-local LOGIN_LABELS = { card = "Show a small since-your-last-visit card", always = "Open the window", todo = "Open it when the to-do list has items", never = "Stay closed" }
+local LOGIN_LABELS = { card = "Show the login card", always = "Open the window", todo = "Open it if the to-do list has items", never = "Stay closed" }
 local LOGIN_DEFAULT = "card"
 local NOTE_DATE_LABELS = { none = "Nothing", public = "The public note", officer = "The officer note" }
 
@@ -3902,10 +3902,10 @@ local function buildCard()
         armed:Show()
     end
     card.promoteItems, card.demoteItems = {}, {}
-    card.promote = createFilter(actions, "Promote", card.promoteItems, 84)
+    card.promote = createFilter(actions, "Promote", card.promoteItems, 82)
     card.promote:SetPoint("LEFT")
     explain(card.promote, function(self) return self:IsEnabled() and "Pick the rank to promote to." or "Your rank cannot promote this member, or they are already at the top." end)
-    card.demote = createFilter(actions, "Demote", card.demoteItems, 84)
+    card.demote = createFilter(actions, "Demote", card.demoteItems, 78)
     card.demote:SetPoint("LEFT", card.promote, "RIGHT", 4, 0)
     explain(card.demote, function(self) return self:IsEnabled() and "Pick the rank to demote to." or "Your rank cannot demote this member, or they are already at the bottom." end)
     card.fillRankMenus = function(guild, member)
@@ -3923,10 +3923,10 @@ local function buildCard()
             card.demoteItems[#card.demoteItems + 1] = { text = name, action = function() armAction("demote", member, i - current, name) end }
         end
     end
-    card.kick = makeButton(actions, "Remove", 80, function() armAction("kick", cardMember, 1, nil) end)
+    card.kick = makeButton(actions, "Remove", 70, function() armAction("kick", cardMember, 1, nil) end)
     card.kick:SetPoint("LEFT", card.demote, "RIGHT", 4, 0)
     explain(card.kick, function(self) return self:IsEnabled() and "Remove from the guild. A red button appears to confirm it." or "Your rank cannot remove this member." end)
-    card.ban = makeButton(actions, "Ban", 80, function()
+    card.ban = makeButton(actions, "Ban", 60, function()
         local guild = guildOf()
         if GL:IsBanned(guild, cardMember.name) then
             confirm("Lift the ban on " .. cardMember.name .. "?", function() GL:Unban(guild, cardMember.name, "user") GL:RefreshWindow() end)

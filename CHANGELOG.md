@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.8
+
+- The login-mode dropdown in Settings no longer runs past the window: its choices read "Show the login card", "Open the window", "Open it if the to-do list has items", "Stay closed".
+- Remove and Ban on the member card no longer overlap after Promote and Demote became rank lists.
+
 ## 1.2.7
 
 - Smarter alt suggestions. A handoff (one character logs off, another logs on) now counts by how quick it was (a real character switch is under 45 seconds) and is shared out when several people logged on in the same window, so "four alts of the same person in one hour" stops happening. One handoff is never enough by itself; two are, and both directions add more. Two characters ever seen online at the same time are never suggested as alts (they are two players), and each character gets at most one suggestion at a time. Names count when the first name or the surname is the same, or the first five letters match; a four-letter match only adds to other evidence. The To-do says "Likely" or "Possibly" and shows the strongest six.
