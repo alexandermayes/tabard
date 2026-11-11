@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.7
+
+- Smarter alt suggestions. A handoff (one character logs off, another logs on) now counts by how quick it was (a real character switch is under 45 seconds) and is shared out when several people logged on in the same window, so "four alts of the same person in one hour" stops happening. One handoff is never enough by itself; two are, and both directions add more. Two characters ever seen online at the same time are never suggested as alts (they are two players), and each character gets at most one suggestion at a time. Names count when the first name or the surname is the same, or the first five letters match; a four-letter match only adds to other evidence. The To-do says "Likely" or "Possibly" and shows the strongest six.
+- A line at login: "Tabard 1.2.7 loaded. /tabard opens the window.", or "updated to 1.2.7 (from 1.2.6): ..." the first time after the CurseForge app updates it, like other addons print.
+- The "since you were last here" line prints after a /reload too, and says "nothing has changed" when nothing has; the long report still only prints at a real login.
+- The login card is back to normal size (1.2.6 made it 15% bigger); it keeps the extra width and eight lines.
+
 ## 1.2.6
 
 - The login card is bigger: wider (560 instead of 400) so the lines stop being cut short, eight lines instead of six, and the whole card drawn 15% larger than the window.
