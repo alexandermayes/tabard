@@ -385,7 +385,9 @@ function GL:ImportGameLogEntries(guild, entries, opts)
                 table.insert(times, pos, t)
             end
             if kind == "invite" and player2 then
-                local event = match("invite", player2, t)
+                -- Looking up the joining is non-exclusive: several invites (two officers, or one remembered at two
+                -- times) can describe one join, and none of them may add a second one.
+                local event = self:MatchEvent(guild, "join", player2, t, "game", { ignoreClaim = true })
                 if event then
                     claim(kind, event)
                     event.by = event.by or player1
