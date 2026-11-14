@@ -371,17 +371,33 @@ end
 -- Events -------------------------------------------------------------------------------------------
 local nextId = 0
 
--- Adds a record to the guild's ledger. fields: who, by, from, to, level, text, src ("scan" | "game" | "user" | "sync" | "import").
+-- Adds a record to the guild's ledger, in time order (oldest first). fields: who, by, from, to, level, text, src ("scan" | "game" | "user" | "sync" | "import").
+-- An event with the same time as an existing one goes after it, so ties keep their insertion order.
 function GL:AddEvent(guild, kind, fields, t)
     nextId = nextId + 1
     local event = { t = t or self:Now(), k = kind, src = fields.src or "scan", id = string.format("%x%03d", self:Now(), nextId % 1000) }
     for key, value in pairs(fields) do
         if key ~= "src" then event[key] = value end
     end
-    guild.events[#guild.events + 1] = event
+    -- Search from the end: new events are almost always the newest, so this usually appends.
+    local list = guild.events
+    local pos = #list + 1
+    while pos > 1 and list[pos - 1].t > event.t do pos = pos - 1 end
+    table.insert(list, pos, event)
     self:Announce(event, guild)
     if self.OnLedgerChanged then self:OnLedgerChanged(guild, event) end
     return event
+end
+
+-- Sorts the guild's ledger in place, oldest first. Stable: events with the same time keep their existing order.
+function GL:SortEvents(guild)
+    local list = guild.events
+    local position = {}
+    for i, event in ipairs(list) do position[event] = i end
+    table.sort(list, function(a, b)
+        if a.t ~= b.t then return a.t < b.t end
+        return position[a] < position[b]
+    end)
 end
 
 -- The most recent event of a kind about a member within `window` seconds of `t`, or nil.
