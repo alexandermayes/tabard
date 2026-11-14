@@ -122,6 +122,7 @@ function GL:InitDB()
     copyDefaults(db.settings, DEFAULT_SETTINGS)
     -- Level-ups in chat became the default in 1.0.0; settings saved before that had it off.
     if not db.levelLinesOn then db.levelLinesOn = true db.settings.announce.level = true end
+    db.settings.noteJoinDate = nil   -- removed: the game blocks addons from writing guild notes
     self.db = db
     self.settings = db.settings
 end
