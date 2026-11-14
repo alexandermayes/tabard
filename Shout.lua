@@ -27,13 +27,13 @@ local LINES = {
         "{NAME} 20!!",
         "GZZZZ {NAME}!! LEVEL 20",
         "LETS GOOO {NAME} 20 <3",
-        "{NAME} HIT 20!! WC and SFK time",
+        "GZ {NAME} 20!! keep it rolling",
     },
     [30] = {
         "{NAME} 30!!!",
         "GZZZ {NAME} LEVEL 30",
-        "HELL YEAH {NAME}!! halfway in levels, not in xp lol",
-        "LETS GOOO {NAME} 30!! SM time",
+        "HELL YEAH {NAME}!! 30 already",
+        "LETS GOOO {NAME} 30!! big number",
     },
     [40] = {
         "{NAME} 40!!! MOUNT TIME",
@@ -45,14 +45,14 @@ local LINES = {
         "{NAME} 50!!!",
         "GZZZ {NAME} LEVEL 50!! home stretch",
         "LETS GOOO {NAME}!! 10 more",
-        "HELL YEAH {NAME} 50!! BRD time",
+        "HELL YEAH {NAME} 50!! so close",
     },
     [60] = {
         "{NAME} 60!!!! GZZZZ",
         "GZZZZZ {NAME}!!! LEVEL 60",
         "HELL YEAH {NAME}!! 60!!! <3",
         "LETS GOOOOO {NAME} 60!!!",
-        "{NAME} DID IT!! 60!!! attunements next, ask in gchat",
+        "{NAME} DID IT!! 60!!! welcome to the top",
         "SIXTY!!! gz gz gz {name} :D",
     },
 }

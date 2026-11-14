@@ -28,7 +28,7 @@ GL.Welcome = Welcome
 local DEFAULT_LINES = {
     "Hey {name}, welcome to the guild. I'm {me}, say hi in guild chat whenever.",
     "Welcome in {name}. If you need anything, ask in guild chat or whisper me, I'm {me}.",
-    "Hey {name}, glad you joined. People are usually around for dungeons, just ask.",
+    "Hey {name}, glad you joined. People are usually around to group up, just ask.",
     "Welcome {name}. Level {level} {class}, nice. Shout in guild chat when you want a group.",
     "Hey {name}, {me} here. Welcome aboard, ask in guild chat whenever you want a group.",
     "{name}, welcome to the guild. Nothing you have to do, just hang out and play.",
