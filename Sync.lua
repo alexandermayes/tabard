@@ -453,8 +453,10 @@ local function apply(guild, fields, sender)
             if not ban or (ban.stamp or 0) < stamp then
                 if lifted > 0 then
                     if not ban then guild.bans[name] = { t = t, by = by, reason = reason, class = class ~= "" and class or nil, stamp = stamp } end
-                    if not guild.bans[name].lifted then GL:Unban(guild, name, "sync", liftedBy, stamp) end
-                    guild.bans[name].lifted = lifted
+                    local b = guild.bans[name]
+                    -- Set directly: GL:Unban refuses a sync whose stamp matches the ban's own stamp, which dropped liftedBy.
+                    if not b.lifted then GL:AddEvent(guild, "unban", { who = name, by = liftedBy, src = "sync" }, stamp) end
+                    b.lifted, b.liftedBy, b.stamp = lifted, liftedBy ~= "" and liftedBy or nil, stamp
                 else
                     if ban and ban.lifted then ban.lifted, ban.liftedBy = nil, nil end
                     GL:Ban(guild, name, reason, "sync", by, t, stamp)

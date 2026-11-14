@@ -237,7 +237,7 @@ local function diffRoster(guild, roster, now, partial)
             if member.watch and cameOnline and not told then
                 GL:Print(GL:ColoredName(member) .. " is online now (you asked to be told; the Watch button on their card turns this off).")
             end
-            if (line.online and true or false) ~= (member.online and true or false) and GL.NoteTransition then GL:NoteTransition(guild, name, line.online, now) end
+            if (line.online and true or false) ~= (member.online and true or false) and GL.sessionReady and GL.NoteTransition then GL:NoteTransition(guild, name, line.online, now) end
             updateMember(member, line, now)
             if noteChanged and GL.settings.autoAlts then GL:DetectAlt(guild, member) end
         else
