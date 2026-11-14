@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.3.0
+
+- This is the Never Lucky fork of alexandermayes/tabard (by Zev), installed from https://github.com/Never-Lucky-Group/tabard rather than CurseForge. Update notices and the Usage copy point there too.
+- Bans and leaves save again. "Add a ban" asks for the reason, and the member card's Leave "Set" saves. Prompts chained from another prompt no longer close the new one straight away.
+- The Log matches the game's guild log. Joins, invites, leaves, removals and former members from the game's log are recorded for everyone, including people who have already left, and a leave or removal is recorded the moment the game announces it, not after two roster reads.
+- No duplicate events. The same game-log entry is no longer added again as time passes, a join is not added twice when two officers invited the same person, and a game-log join merges with the roster scan's event for it.
+- The Log is in time order, so "since your last visit" and the to-do "back" items see everything, not just the newest part of the list.
+- Ledgers saved by earlier versions are repaired once, on the first roster read after the update: duplicates are removed, events are sorted, and joins, invites and former members the game's log knew about are filled in. Tabard backs the ledger up first, and prints one line saying what changed. If the backup fails, the repair is skipped.
+- The Log shows where its history starts: "Recording since <date>, keeping <N> days" at the bottom, also on an empty Log.
+- The Log's filter resets to the Settings defaults each time you open it. Settings has a new "Hidden on the Log by default" list (it starts with Leveled). Changes made from the Log's Filter menu last only for that visit.
+- Tooltips, the newcomer "grouped with a guildie" flag and raid rosters find other players by their full name ("First Last"), which before never found other players on Forever.
+- Guild notes are read-only in the member card, with an "Edit in roster" button that opens the game's guild window. The game does not let addons write notes, so the Save buttons and the "write the join date into notes" option are gone.
+- The Tools page's "Remove all" and "Promote all" buttons are gone, because the game refuses them from an addon. The Macro buttons stay.
+- A shared ban lifted by another officer keeps who lifted it, and a login burst no longer makes Tabard invent character switches for the alt suggestions.
+- The README's install steps and the update notice are for the fork.
+- For contributors: tests/run.sh runs an offline test harness with a WoW API stub, and tests/repair_report.lua prints what the ledger repair would change in a saved file without writing anything.
+
 ## 1.2.11
 
 - Pick the trial rank by name (asked for on CurseForge). Settings has two new dropdowns, "Trial rank" and "Newcomer rank", listing your guild's ranks; before, the trial rank was a "rank index" number box at the bottom of the thresholds, and the newcomer rank (the one promotions are suggested out of) could not be set at all. Both default to the newest rank, as before. The number box is gone.

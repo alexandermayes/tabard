@@ -2,6 +2,17 @@
 
 A dated record of your guild for World of Warcraft Forever, built on the stock UI.
 
+This is the Never Lucky fork of [alexandermayes/tabard](https://github.com/alexandermayes/tabard) (by Zev).
+It is installed from GitHub, not CurseForge, and bug reports and new versions come from https://github.com/Never-Lucky-Group/tabard.
+
+## Install
+
+1. Open https://github.com/Never-Lucky-Group/tabard and click **Code**, then **Download ZIP**.
+2. Extract the zip. The folder inside is named `tabard-main`; rename it to exactly `Tabard`.
+3. Put the `Tabard` folder in `World of Warcraft\_forever_\Interface\AddOns\`, so that `AddOns\Tabard\Tabard.toc` exists.
+4. If you already have the CurseForge copy, remove its `Tabard` folder first, or turn off its auto-update for Tabard. Otherwise the CurseForge app will overwrite this fork with the original.
+5. Restart the game, check that Tabard is ticked in the AddOns list, and log in. Type `/tabard` to open the window.
+
 Tabard watches the roster while you play and keeps a ledger: who joined and when, who left or was
 removed, promotions, level-ups, name changes, note changes, and more. It fills the gaps a guild officer
 usually keeps in their head, and it shares that knowledge between officers automatically.
@@ -53,7 +64,7 @@ usually keeps in their head, and it shares that knowledge between officers autom
 Officers who run Tabard exchange join dates, promotion dates, alts, bans, notes, nicknames, birthdays, votes,
 strikes and handled items through addon messages. Only members at or above the rank you choose are
 trusted. Nothing is announced on their behalf. The hello also carries the version, so when a guildie runs a
-newer Tabard you get one chat line saying it is time to update in the CurseForge app.
+newer Tabard you get one chat line saying where to get it (https://github.com/Never-Lucky-Group/tabard).
 
 After the hello comes a line of usage counts: how often the window was opened, which pages, member cards and
 slash commands, and which features are on. No names, notes or chat. `/tabard users` shows what the other

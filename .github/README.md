@@ -9,9 +9,12 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/alexandermayes/tabard/releases/latest"><b>Download</b></a> ·
-  <a href="https://www.curseforge.com/wow/addons/tabard-guild-roster">CurseForge</a> ·
-  <a href="https://github.com/alexandermayes/tabard/issues/new/choose">Report a bug</a>
+  The Never Lucky fork of <a href="https://github.com/alexandermayes/tabard">alexandermayes/tabard</a> (by Zev).
+</p>
+
+<p align="center">
+  <a href="https://github.com/Never-Lucky-Group/tabard"><b>Download</b></a> ·
+  <a href="https://github.com/Never-Lucky-Group/tabard/issues/new/choose">Report a bug</a>
 </p>
 
 ![Tabard: your whole guild on one page](media/01-overview.png)
@@ -33,18 +36,16 @@ officers usually hold in their heads, and shares them with the other officers wh
 
 ## Install
 
-**CurseForge app:** search for "Tabard: Guild Roster & Records".
+This fork is installed from GitHub, not CurseForge.
 
-**By hand:**
-
-1. Download `Tabard-<version>.zip` from the [latest release](https://github.com/alexandermayes/tabard/releases/latest).
-2. Extract it into `World of Warcraft\_forever_\Interface\AddOns\`. You should end up with
+1. Open [https://github.com/Never-Lucky-Group/tabard](https://github.com/Never-Lucky-Group/tabard) and click the green **Code** button, then **Download ZIP**.
+2. Extract the zip. The folder inside is named `tabard-main`; rename it to exactly `Tabard`.
+3. Put the `Tabard` folder in `World of Warcraft\_forever_\Interface\AddOns\`. You should end up with
    `AddOns\Tabard\Tabard.toc`, not `AddOns\Tabard\Tabard\Tabard.toc`.
-3. Restart the game, check that Tabard is ticked in the AddOns list on the character screen, and log in.
-4. Type `/tabard` or click the minimap button. There is nothing to set up.
-
-Download the zip from Releases, not GitHub's green "Code" button: that one includes this repository's
-own files and names the folder `tabard-main`.
+4. If you have the CurseForge copy, remove it or turn off its auto-update for Tabard first. Otherwise the
+   CurseForge app will overwrite this fork with the original.
+5. Restart the game, check that Tabard is ticked in the AddOns list on the character screen, and log in.
+6. Type `/tabard` or click the minimap button. There is nothing to set up.
 
 ## Screens
 
@@ -86,10 +87,10 @@ Manager installed and Tabard keeps its alt groups in step with it.
 
 ## Bugs and ideas
 
-Open an [issue](https://github.com/alexandermayes/tabard/issues/new/choose). For a Lua error, paste the
+Open an [issue](https://github.com/Never-Lucky-Group/tabard/issues/new/choose). For a Lua error, paste the
 whole error text. Please leave out officer notes and anything else about your guildmates that should
 stay private.
 
 ## Licence
 
-[MIT](https://github.com/alexandermayes/tabard/blob/main/LICENSE). Tabard contains no code from Guild Roster Manager.
+[MIT](https://github.com/Never-Lucky-Group/tabard/blob/main/LICENSE), the original licence by Zev (alexandermayes/tabard). Tabard contains no code from Guild Roster Manager.

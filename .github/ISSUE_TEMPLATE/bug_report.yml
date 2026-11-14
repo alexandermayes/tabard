@@ -10,7 +10,7 @@ body:
     id: version
     attributes:
       label: Tabard version
-      description: In the zip's name, the CurseForge app, or the `## Version` line of Tabard.toc.
+      description: The `## Version` line of Tabard.toc.
       placeholder: "1.0.0"
     validations:
       required: true

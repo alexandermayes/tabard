@@ -6,7 +6,7 @@
 -- An addon cannot reach the internet, so none of this goes anywhere by itself. The counts travel with the
 -- sharing hello to other Tabard users in the same guild (settings.shareUsage, on by default, Settings >
 -- Sharing and tooltips), where /tabard users lists them; /tabard usage shows this copy's line ready to copy,
--- for a Discord post or a CurseForge comment.
+-- for a GitHub issue on the fork.
 --
 -- Wire format (Sync.lua, message "U  version  usage"): "key=value" pairs joined by ";"
 --   s  days since counting started      d  days the window was used      o  opened by hand    a  opened at login
@@ -242,7 +242,7 @@ local function copyBox(text)
         EditBoxOnEnterPressed = function(self) self:GetParent():Hide() end,
         EditBoxOnEscapePressed = function(self) self:GetParent():Hide() end,
     }
-    StaticPopup_Show("TABARD_COPY", "Your Tabard usage. Ctrl+C to copy, then paste it in the Tabard thread on Discord or a CurseForge comment.", nil, { text = text })
+    StaticPopup_Show("TABARD_COPY", "Your Tabard usage. Ctrl+C to copy, then paste it in a new issue at https://github.com/Never-Lucky-Group/tabard/issues", nil, { text = text })
 end
 
 -- /tabard usage: this copy's line, printed and in a box to copy.

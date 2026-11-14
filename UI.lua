@@ -2945,7 +2945,7 @@ local function buildOverviewPage()
         local okPeers, list = pcall(function() return GL.Sync and GL.Sync.Peers and GL.Sync:Peers(guild) or {} end)
         if okPeers and type(list) == "table" then peers = list end
         if GL.newerVersion then
-            lines[#lines + 1] = "|cffffd100Tabard " .. tostring(GL.newerVersion) .. " is available (you have " .. tostring(GL.version) .. "). Update it in the CurseForge app.|r"
+            lines[#lines + 1] = "|cffffd100Tabard " .. tostring(GL.newerVersion) .. " is available (you have " .. tostring(GL.version) .. "). Get it from https://github.com/Never-Lucky-Group/tabard.|r"
         end
         if #peers == 0 then
             lines[#lines + 1] = GREY .. "Nobody else runs Tabard yet. Officers who install it share join dates, alts, bans and notes with you automatically.|r"

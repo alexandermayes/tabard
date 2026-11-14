@@ -132,12 +132,12 @@ frame:SetScript("OnEvent", function(self, event, isLogin, isReload)
     elseif event == "PLAYER_ENTERING_WORLD" then
         self:UnregisterEvent("PLAYER_ENTERING_WORLD")
         if isLogin then
-            -- One line at login like other addons print, and what changed when the CurseForge app updated us.
+            -- One line at login like other addons print, and what changed when a new copy of Tabard was installed.
             local db = GL.db
             local previous = db and db.loadedVersion
             if db then db.loadedVersion = GL.version end
             if previous and previous ~= GL.version then
-                GL:Print("updated to " .. GL.version .. " (from " .. previous .. "): " .. (GL.whatsNew or "see the changelog on CurseForge") .. ". |cffffffff/tabard|r opens the window.")
+                GL:Print("updated to " .. GL.version .. " (from " .. previous .. "): " .. (GL.whatsNew or "see the changelog on GitHub") .. ". |cffffffff/tabard|r opens the window.")
             else
                 GL:Print(GL.version .. " loaded. |cffffffff/tabard|r opens the window.")
             end

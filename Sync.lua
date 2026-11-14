@@ -518,7 +518,7 @@ local function apply(guild, fields, sender)
     if not ok then GL:Print("could not apply a shared record from " .. tostring(sender) .. ": " .. tostring(err)) end
 end
 
--- A peer running a newer release means a newer one is on CurseForge (the client cannot update addons itself):
+-- A peer running a newer release means a newer one is on the fork's GitHub (the client cannot update addons itself):
 -- one chat line per session, and the Overview shows it until then.
 local announcedVersion
 local function noteVersion(version, sender)
@@ -528,7 +528,7 @@ local function noteVersion(version, sender)
     GL.newerVersion = version
     if announcedVersion ~= version then
         announcedVersion = version
-        GL:Print(string.format("Tabard %s is available (you have %s; %s runs the new one). Update it in the CurseForge app.", version, GL.version, sender))
+        GL:Print(string.format("Tabard %s is available (you have %s; %s runs the new one). Get it from https://github.com/Never-Lucky-Group/tabard", version, GL.version, sender))
     end
 end
 
