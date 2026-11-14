@@ -103,7 +103,7 @@ end
 -- TabardDB = { version, settings, guilds = { [key] = guild } }
 -- guild = {
 --   name, realm, created (first scan), scans (count), seeded, lastScan,
---   members = { [name] = member }, former = { [name] = member }, events = { event, ... }, seen = { [fingerprint] = t },
+--   members = { [name] = member }, former = { [name] = member }, events = { event, ... }, seen = { ["kind|p1|p2|rank"] = { t, ... } },
 --   groups = { [id] = { main = name, alts = { name, ... }, t } }, nextGroup,
 --   bans = { [name] = { t, by, reason, class, guid, stamp } }, ranks = { [index] = name }, peers = { [name] = { version, t } }
 -- }
@@ -145,7 +145,41 @@ function GL:Guild()
     for _, field in ipairs({ "members", "former", "events", "seen", "groups", "bans", "ranks", "peers" }) do
         if type(guild[field]) ~= "table" then guild[field] = {} end
     end
+    self:UpgradeSeen(guild)
     return guild
+end
+
+-- Converts old game-log fingerprints ("kind|p1|p2|rank|hour" = time) to the current form
+-- ("kind|p1|p2|rank" = { time, ... }, ascending). Times of one entry less than an hour apart were the same
+-- entry read in two hour buckets and are merged; times further apart are kept. Safe to run repeatedly.
+function GL:UpgradeSeen(guild)
+    local seen = guild.seen
+    local converted
+    for key, value in pairs(seen) do
+        if type(value) == "number" then
+            converted = converted or {}
+            local newKey = key:match("^(.*)|[^|]*$")
+            if newKey then
+                converted[newKey] = converted[newKey] or {}
+                table.insert(converted[newKey], value)
+            end
+            seen[key] = nil
+        elseif type(value) ~= "table" then
+            seen[key] = nil
+        end
+    end
+    if not converted then return end
+    for key, times in pairs(converted) do
+        table.sort(times)
+        local merged = {}
+        for _, t in ipairs(times) do
+            if #merged == 0 or t - merged[#merged] >= 3600 then merged[#merged + 1] = t end
+        end
+        local list = seen[key] or {}
+        for _, t in ipairs(merged) do list[#list + 1] = t end
+        table.sort(list)
+        seen[key] = list
+    end
 end
 
 function GL:Member(guild, name)
@@ -409,6 +443,31 @@ function GL:FindEvent(guild, kind, who, t, window)
             if not best or math.abs(event.t - t) < math.abs(best.t - t) then best = event end
         end
         if event.t < t - window - 86400 then break end   -- events are roughly in time order
+    end
+    return best
+end
+
+-- Event kinds that describe the same happening: a rejoin is a join, a kick is a leave.
+GL.KIND_CLASS = { join = "join", rejoin = "join", leave = "leave", kick = "leave" }
+
+-- The event a game-log entry most plausibly describes: the nearest one of the same kind class about the
+-- same member, within two hours of `t` (an hour when the event itself came from the game log, whose times
+-- are only good to the hour). Events already claimed by a game-log entry (event.g) are skipped.
+-- src: where the entry came from (normally "game"). opts (optional): ignoreClaim = true also considers claimed
+-- events; exclude = an event never to return; claimed = a set (keyed by event) of events to skip.
+function GL:MatchEvent(guild, kind, who, t, src, opts)
+    opts = opts or {}
+    local class = self.KIND_CLASS[kind] or kind
+    local best, bestGap
+    for i = #guild.events, 1, -1 do
+        local event = guild.events[i]
+        if event.t < t - 7200 - 86400 then break end   -- events are roughly in time order
+        if event.who == who and (self.KIND_CLASS[event.k] or event.k) == class
+            and event ~= opts.exclude and not (opts.claimed and opts.claimed[event])
+            and (opts.ignoreClaim or not event.g) then
+            local gap = math.abs(event.t - t)
+            if gap <= (event.src == "game" and 3600 or 7200) and (not best or gap < bestGap) then best, bestGap = event, gap end
+        end
     end
     return best
 end

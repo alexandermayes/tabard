@@ -7,7 +7,7 @@ local ADDON_NAME, GL = ...
 
 local SCAN_INTERVAL = 15          -- seconds between roster requests while the game keeps sending updates
 local LEAVE_CONFIRM_SCANS = 2     -- a member must be missing from this many scans in a row before "left" is recorded
-local GAME_LOG_WINDOW = 3 * 3600  -- how far apart a scan event and a game-log entry may be and still be the same thing
+local SEEN_WINDOW = 2 * 3600    -- how far apart two readings of the same game-log entry may be (the game only gives the hour)
 local SEEN_KEEP = 60 * 86400      -- how long game-log fingerprints are remembered
 
 local frame = CreateFrame("Frame")
@@ -298,75 +298,157 @@ local function gameLogTime(now, years, months, days, hours)
     return now - ((((years or 0) * 12 + (months or 0)) * 30.4 + (days or 0)) * 24 + (hours or 0)) * 3600
 end
 
+-- Merges a list of game-log entries ({ kind, p1, p2, rank, t }, absolute t) into the ledger. Entries already
+-- merged on an earlier read are recognised by guild.seen (fingerprint -> list of times) and skipped; the hour
+-- the game reports drifts, so times are compared with a tolerance, one-to-one. opts.replay = true skips that
+-- check (and does not remember the entries) and instead pairs entries with events one-to-one within the call,
+-- ignoring earlier claims; the one-time repair uses it.
+function GL:ImportGameLogEntries(guild, entries, opts)
+    opts = opts or {}
+    local replay = opts.replay
+    local now = self:Now()
+    local wasQuiet = self.quiet
+    self.quiet = true   -- history is never announced
+    local held = {}   -- joins whose chat line waited for the inviter
+    for _, entry in ipairs(entries) do
+        entry.key = table.concat({ entry.kind, entry.p1, entry.p2 or "", entry.rank or "" }, "|")
+    end
+    -- Entries seen on an earlier read pair one-to-one with the remembered times, nearest first.
+    local old = {}
+    if not replay then
+        local byKey = {}
+        for _, entry in ipairs(entries) do
+            byKey[entry.key] = byKey[entry.key] or {}
+            table.insert(byKey[entry.key], entry)
+        end
+        for key, list in pairs(byKey) do
+            local times = guild.seen[key]
+            if times and #times > 0 then
+                table.sort(list, function(a, b) return a.t < b.t end)
+                local used = {}
+                for _, entry in ipairs(list) do
+                    local best
+                    for j, st in ipairs(times) do
+                        if not used[j] and math.abs(st - entry.t) <= SEEN_WINDOW
+                            and (not best or math.abs(st - entry.t) < math.abs(times[best] - entry.t)) then best = j end
+                    end
+                    if best then used[best] = true; old[entry] = true end
+                end
+            end
+        end
+    end
+    -- Per-call claims. Join and invite entries describe the same joining, so each kind keeps its own set and
+    -- ignores the other's claim; everything else is claimed once, for good (or per call when replaying).
+    local claimedBy = { invite = {}, join = {}, other = {} }
+    local function match(kind, who, t)
+        local opt
+        if kind == "invite" or kind == "join" then
+            opt = { ignoreClaim = true, claimed = claimedBy[kind] }
+        elseif replay then
+            opt = { ignoreClaim = true, claimed = claimedBy.other }
+        end
+        return self:MatchEvent(guild, kind == "invite" and "join" or kind, who, t, "game", opt)
+    end
+    local function claim(kind, event)
+        event.g = true
+        claimedBy[(kind == "invite" or kind == "join") and kind or "other"][event] = true
+    end
+    local function create(kind, eventKind, fields, t)
+        fields.src = "game"
+        local event = self:AddEvent(guild, eventKind, fields, t)
+        claim(kind, event)
+        return event
+    end
+    for _, entry in ipairs(entries) do
+        if not old[entry] then
+            local kind, player1, player2, rank, t = entry.kind, entry.p1, entry.p2, entry.rank, entry.t
+            if not replay then
+                local times = guild.seen[entry.key]
+                if not times then times = {}; guild.seen[entry.key] = times end
+                local pos = #times + 1
+                while pos > 1 and times[pos - 1] > t do pos = pos - 1 end
+                table.insert(times, pos, t)
+            end
+            if kind == "invite" and player2 then
+                local event = match("invite", player2, t)
+                if event then
+                    claim(kind, event)
+                    event.by = event.by or player1
+                    local joiner = guild.members[player2]
+                    if joiner then joiner.invitedBy = joiner.invitedBy or player1 end
+                    if event.hold then event.hold = nil; held[#held + 1] = event end
+                elseif guild.members[player2] then
+                    self:SetJoinDate(guild, player2, t, "game")
+                    guild.members[player2].invitedBy = guild.members[player2].invitedBy or player1
+                    create(kind, "join", { who = player2, by = player1 }, t)
+                end
+            elseif kind == "join" then
+                local event = match("join", player1, t)
+                if event then
+                    claim(kind, event)
+                elseif guild.members[player1] then
+                    self:SetJoinDate(guild, player1, t, "game")
+                    create(kind, "join", { who = player1 }, t)
+                end
+            elseif (kind == "promote" or kind == "demote") and player2 then
+                local event = match(kind, player2, t)
+                if event then
+                    claim(kind, event)
+                    event.by = event.by or player1
+                else
+                    create(kind, kind, { who = player2, by = player1, to = rank }, t)
+                end
+                local member = guild.members[player2]
+                if member and (not member.promoted or t > member.promoted) then self:SetPromotedDate(guild, player2, t, "game") end
+            elseif kind == "remove" and player2 then
+                local event = match("leave", player2, t)
+                local former = guild.former[player2]
+                if former then former.leftKind, former.leftBy = "kick", player1 end
+                if event then
+                    claim(kind, event)
+                    event.k, event.by = "kick", event.by or player1
+                elseif not guild.members[player2] then
+                    create(kind, "kick", { who = player2, by = player1 }, t)
+                end
+            elseif kind == "quit" then
+                local event = match("leave", player1, t)
+                if event then
+                    claim(kind, event)
+                elseif not guild.members[player1] then
+                    create(kind, "leave", { who = player1 }, t)
+                end
+            end
+        end
+    end
+    for _, entry in ipairs(entries) do entry.key = nil end
+    self.quiet = wasQuiet
+    for _, event in ipairs(held) do self:Announce(event, guild) end
+    -- Forget old fingerprints, time by time.
+    for key, times in pairs(guild.seen) do
+        for i = #times, 1, -1 do
+            if now - times[i] > SEEN_KEEP then table.remove(times, i) end
+        end
+        if #times == 0 then guild.seen[key] = nil end
+    end
+end
+
+-- Reads the game's event log and merges it into the ledger.
 local function importGameLog(guild)
     if not GetNumGuildEvents then return end
     local count = GetNumGuildEvents()
     if not count or count == 0 then return end
     local now = GL:Now()
-    local wasQuiet = GL.quiet
-    GL.quiet = true   -- history is never announced
-    local held = {}   -- joins whose chat line waited for the inviter
+    local entries = {}
     for i = 1, count do
         local kind, player1, player2, rank, years, months, days, hours = GetGuildEventInfo(i)
         if GL:IsUsable(kind) and GL:IsUsable(player1) and type(player1) == "string" then
             player1 = GL:ShortName(player1)
             player2 = (GL:IsUsable(player2) and type(player2) == "string") and GL:ShortName(player2) or nil
             rank = GL:IsUsable(rank) and rank or nil
-            local t = gameLogTime(now, years, months, days, hours)
-            local key = table.concat({ kind, player1, player2 or "", rank or "", tostring(math.floor(t / 3600)) }, "|")
-            if not guild.seen[key] then
-                guild.seen[key] = t
-                if kind == "invite" and player2 then
-                    local event = GL:FindEvent(guild, "join", player2, t, GAME_LOG_WINDOW) or GL:FindEvent(guild, "rejoin", player2, t, GAME_LOG_WINDOW)
-                    if event then
-                        event.by = event.by or player1
-                        local joiner = guild.members[player2]
-                        if joiner then joiner.invitedBy = joiner.invitedBy or player1 end
-                        if event.hold then event.hold = nil; held[#held + 1] = event end
-                    elseif guild.members[player2] then
-                        GL:SetJoinDate(guild, player2, t, "game")
-                        guild.members[player2].invitedBy = guild.members[player2].invitedBy or player1
-                        GL:AddEvent(guild, "join", { who = player2, by = player1, src = "game" }, t)
-                    end
-                elseif kind == "join" then
-                    local event = GL:FindEvent(guild, "join", player1, t, GAME_LOG_WINDOW)
-                    if not event and guild.members[player1] then
-                        GL:SetJoinDate(guild, player1, t, "game")
-                        GL:AddEvent(guild, "join", { who = player1, src = "game" }, t)
-                    end
-                elseif (kind == "promote" or kind == "demote") and player2 then
-                    local event = GL:FindEvent(guild, kind, player2, t, GAME_LOG_WINDOW)
-                    if event then
-                        event.by = event.by or player1
-                    else
-                        GL:AddEvent(guild, kind, { who = player2, by = player1, to = rank, src = "game" }, t)
-                    end
-                    local member = guild.members[player2]
-                    if member and (not member.promoted or t > member.promoted) then GL:SetPromotedDate(guild, player2, t, "game") end
-                elseif kind == "remove" and player2 then
-                    local event = GL:FindEvent(guild, "leave", player2, t, GAME_LOG_WINDOW)
-                    local former = guild.former[player2]
-                    if former then former.leftKind, former.leftBy = "kick", player1 end
-                    if event then
-                        event.k, event.by = "kick", event.by or player1
-                    elseif not guild.members[player2] then
-                        GL:AddEvent(guild, "kick", { who = player2, by = player1, src = "game" }, t)
-                    end
-                elseif kind == "quit" then
-                    local event = GL:FindEvent(guild, "leave", player1, t, GAME_LOG_WINDOW)
-                    if not event and not guild.members[player1] then
-                        GL:AddEvent(guild, "leave", { who = player1, src = "game" }, t)
-                    end
-                end
-            end
+            entries[#entries + 1] = { kind = kind, p1 = player1, p2 = player2, rank = rank, t = gameLogTime(now, years, months, days, hours) }
         end
     end
-    GL.quiet = wasQuiet
-    for _, event in ipairs(held) do GL:Announce(event, guild) end
-    -- Forget old fingerprints.
-    for key, t in pairs(guild.seen) do
-        if now - t > SEEN_KEEP then guild.seen[key] = nil end
-    end
+    GL:ImportGameLogEntries(guild, entries)
 end
 
 -- Driving it ---------------------------------------------------------------------------------------
