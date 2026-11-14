@@ -120,3 +120,51 @@ test("a real rejoin is not swallowed by the earlier join", function()
     for _, e in ipairs(g.events) do if e.who == "Flip Guy" then all[#all + 1] = e.k end end
     eq(table.concat(all, ","), "join,leave,rejoin", "events in order")
 end)
+local function withGuy(name)
+    local GL = W.load()
+    W.setRoster({ { name = "Ooh Woo", rank = "Initiate", rankIndex = 8, level = 20, class = "MAGE" } })
+    W.scan(GL)
+    W.setRoster({
+        { name = "Ooh Woo", rank = "Initiate", rankIndex = 8, level = 20, class = "MAGE" },
+        { name = name, rank = "Initiate", rankIndex = 8, level = 10, class = "ROGUE" },
+    })
+    W.advance(60)
+    W.scan(GL)
+    return GL, GL:Guild()
+end
+test("two officers invited, one join", function()
+    for _, order in ipairs({ "invite first", "join first" }) do
+        local GL, g = withGuy("Two Guy")
+        local a = { kind = "invite", p1 = "Ann Officer", p2 = "Two Guy", hoursAgo = 2 }
+        local b = { kind = "invite", p1 = "Bob Officer", p2 = "Two Guy", hoursAgo = 2 }
+        local j = { kind = "join", p1 = "Two Guy", hoursAgo = 2 }
+        W.setGameLog(order == "invite first" and { a, b, j } or { j, a, b })
+        W.importLog(GL)
+        local joins = W.events(g, "join", "Two Guy")
+        eq(#joins, 1, order .. ": one join")
+        ok(joins[1] and joins[1].by ~= nil, order .. ": inviter set")
+        eq(#W.events(g, "invite", "Two Guy"), 0, order .. ": no invite event")
+    end
+end)
+test("drifted invites from one officer", function()
+    local GL, g = withGuy("Drift Guy")
+    local T = W.events(g, "join", "Drift Guy")[1].t
+    GL:ImportGameLogEntries(g, {
+        { kind = "invite", p1 = "Ann Officer", p2 = "Drift Guy", t = T - 1800 },
+        { kind = "invite", p1 = "Ann Officer", p2 = "Drift Guy", t = T + 3600 },
+    }, { replay = true })
+    eq(#W.events(g, "join", "Drift Guy"), 1, "one join")
+    eq(#W.events(g, "invite", "Drift Guy"), 0, "no invite events")
+end)
+test("replay two inviters", function()
+    local GL, g = withGuy("Rep Guy")
+    local T = W.events(g, "join", "Rep Guy")[1].t
+    for _ = 1, 2 do
+        GL:ImportGameLogEntries(g, {
+            { kind = "invite", p1 = "Ann Officer", p2 = "Rep Guy", t = T - 600 },
+            { kind = "invite", p1 = "Bob Officer", p2 = "Rep Guy", t = T - 600 },
+            { kind = "join", p1 = "Rep Guy", t = T - 600 },
+        }, { replay = true })
+    end
+    eq(#W.events(g, "join", "Rep Guy"), 1, "one join")
+end)
