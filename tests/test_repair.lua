@@ -52,7 +52,7 @@ test("runs once", function()
     for _, m in ipairs(W.chat) do if tostring(m):find("repaired the ledger", 1, true) then lines = lines + 1 end end
     eq(lines, 1, "printed once")
     eq(g.repaired, 1, "marked")
-    eq(select(2, GL:BackupInfo()), "before 1.3.0 repair", "backup label")
+    eq(select(2, GL:BackupInfo()), "before ledger repair", "backup label")
     W.clearChat()
     GL:ProcessRoster()
     for _, m in ipairs(W.chat) do ok(not tostring(m):find("repaired the ledger", 1, true), "not again") end
@@ -96,4 +96,60 @@ test("the backup carries the marker", function()
     local GL, g = fresh()
     GL:RepairLedger(g)
     ok(GL.db.backup and GL.db.backup.guild.repaired == 1, "backup has marker")
+end)
+test("a leave between a join and a rejoin keeps all three", function()
+    local GL, g = fresh()
+    local T = GL:Now() - 90000
+    g.events = {
+        { k = "join", who = "Yo Yo", t = T, src = "game" },
+        { k = "leave", who = "Yo Yo", t = T + 1800, src = "scan" },
+        { k = "rejoin", who = "Yo Yo", t = T + 3000, src = "scan" },
+    }
+    local report = GL:RepairLedger(g)
+    eq(#W.events(g, "join", "Yo Yo"), 1, "join kept")
+    eq(#W.events(g, "leave", "Yo Yo"), 1, "leave kept")
+    eq(#W.events(g, "rejoin", "Yo Yo"), 1, "rejoin kept")
+    eq(report.duplicates, 0, "no duplicates")
+end)
+test("promotions to different ranks, or by different officers, are not duplicates", function()
+    local GL, g = fresh()
+    local T = GL:Now() - 90000
+    g.events = {
+        { k = "promote", who = "Fast Guy", t = T, src = "game", to = "Member", by = "Zev Zev" },
+        { k = "promote", who = "Fast Guy", t = T + 2400, src = "game", to = "Lucky", by = "Zev Zev" },
+        { k = "promote", who = "Two Bosses", t = T, src = "game", to = "Member", by = "Zev Zev" },
+        { k = "promote", who = "Two Bosses", t = T + 2400, src = "game", to = "Member", by = "Ann Officer" },
+    }
+    local report = GL:RepairLedger(g)
+    eq(#W.events(g, "promote", "Fast Guy"), 2, "both ranks kept")
+    eq(#W.events(g, "promote", "Two Bosses"), 2, "both officers kept")
+    eq(report.duplicates, 0, "no duplicates")
+end)
+test("same promotion read twice is still one", function()
+    local GL, g = fresh()
+    local T = GL:Now() - 90000
+    g.events = {
+        { k = "promote", who = "Fast Guy", t = T, src = "game", to = "Member", by = "Zev Zev" },
+        { k = "promote", who = "Fast Guy", t = T + 2400, src = "game", to = "Member" },
+    }
+    local report = GL:RepairLedger(g)
+    eq(#W.events(g, "promote", "Fast Guy"), 1, "one promotion")
+    eq(report.duplicates, 1, "one duplicate")
+end)
+test("a removal merged into a plain leave makes it a kick", function()
+    local GL, g = fresh()
+    local T = GL:Now() - 90000
+    g.former["Gone Guy"] = { name = "Gone Guy", left = T, leftKind = "leave" }
+    g.events = {
+        { k = "leave", who = "Gone Guy", t = T, src = "scan", from = "Initiate" },
+        { k = "kick", who = "Gone Guy", t = T + 1800, src = "game", by = "Zev Zev" },
+    }
+    local report = GL:RepairLedger(g)
+    eq(#W.events(g, "leave", "Gone Guy"), 0, "no plain leave")
+    local kicks = W.events(g, "kick", "Gone Guy")
+    eq(#kicks, 1, "one kick")
+    eq(kicks[1] and kicks[1].by, "Zev Zev", "remover")
+    eq(report.duplicates, 1, "one duplicate")
+    eq(g.former["Gone Guy"].leftKind, "kick", "leftKind")
+    eq(g.former["Gone Guy"].leftBy, "Zev Zev", "leftBy")
 end)
