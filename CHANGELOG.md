@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.2.10
+
+- Level-ups in the chat frame are a cheer now, not a record line. A gold star, "DING!", the level in white and a short tail ("Zev (main) hit level 22! onward!"), in a pink nothing else in Tabard uses, so a ding no longer looks like the teal "is online" line above it. Milestones get their own tails (10 "talents unlocked!", 40 "MOUNT TIME!", 60 "MAX LEVEL!"), other levels draw from a small pool. The history and the Overview keep the plain "reached level 22" wording.
+
+- The stock shoutout and ding lines no longer name dungeons or make claims about where people are in the levelling curve ("SM time", "BRD time", "halfway in levels, not in xp"). Not every guild dungeon-grinds. The 20 line is now "GZ OLAND 20!! keep it rolling", 30 is "LETS GOOO OLAND 30!! big number", 50 is "HELL YEAH OLAND 50!! so close". Lines you wrote yourself are untouched. The Play tab's dungeons-by-level list stays; that is a finder, not a claim.
+
+## 1.2.9
+
+- An Invite button that works on WoW Forever. Typing `/ginvite` in chat is refused by the client whenever a chat addon such as Prat is loaded, and an addon may not invite by itself. Tabard now keeps one secure "Invite Name" button, like the card's Promote button: your click on it runs `/ginvite` as your own command. It comes up in a small bar near the top of the screen (drag it where you like) when someone who is not in the guild whispers you (off with the "Offer an Invite button..." checkbox in Settings), from `/tabard invite Name`, and from "Invite to guild" in the right-click menu on a player, a party member, a friend or a chat name. A key binding, "Invite the last whisperer to the guild" under Tabard in the game's key bindings, clicks it without the mouse. The bar hides itself after a minute or on the X; in combat the name waits until combat ends. A whisper from someone on the ban list says so on the bar.
+
 ## 1.2.8
 
 - The login-mode dropdown in Settings no longer runs past the window: its choices read "Show the login card", "Open the window", "Open it if the to-do list has items", "Stay closed".

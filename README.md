@@ -28,6 +28,8 @@ usually keeps in their head, and it shares that knowledge between officers autom
   their name, and their alts' names, in guild chat and on tooltips.
 - **Login lines**: "X (main) is online (level 48 Mage, last on 2 days ago)." when a guild member logs in; off
   with one checkbox.
+- **Ding lines**: a star, "DING! X (main) hit level 22! onward!" in its own pink when a guild member levels, with
+  milestone tails at 10, 20, 30, 40, 50 and 60.
 - **New members' first week**: how long they have been online and whether anyone has talked to them. A
   newcomer who has been online half an hour with no hello becomes a To-do item, with a guildie near their
   level suggested as a buddy. Only flags and minutes are kept, never message text.

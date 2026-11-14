@@ -15,7 +15,7 @@ local function tocVersion()
 end
 GL.version = tocVersion() or "0.0.0"
 -- One line for the "updated to" message at the first login after an update (an addon cannot read CHANGELOG.md).
-GL.whatsNew = "smarter alt suggestions, a login line, Promote and Demote that pick a rank"
+GL.whatsNew = "a DING! line for level-ups, a secure Invite button, smarter alt suggestions"
 
 -- "1.2.10" -> 1002010, so versions compare as numbers; nil when the text is not a version.
 function GL:VersionNumber(text)
@@ -81,6 +81,7 @@ local DEFAULT_SETTINGS = {
     mainTags = true,         -- "(main)" / "(alt of X)" after names on event lines
     firstWeek = true,        -- track new members' first week: time online, whether anyone talked to them
     anniversaries = true,    -- mention join anniversaries and birthdays at login
+    inviteBar = true,        -- offer the secure Invite button when someone outside the guild whispers you
     loginReport = true,      -- list who joined, left and changed rank while you were away, at login
     minimap = { shown = true, angle = 220 },
     windowPoint = nil,       -- saved window position { point, x, y }
@@ -510,12 +511,45 @@ function GL:Announce(event, guild)
     if announce and announce[event.k] then
         -- The whole line takes the kind's colour (green joins, red leaves, blue level-ups...) so it stands out in
         -- a busy chat frame; names keep their class colour and the line colour resumes after each |r.
+        if event.k == "level" then self:Print(self:DingLine(event, guild)) return end
         local kind = self.KINDS[event.k]
         local color = kind and kind.color or "ffffffff"
         local text = self:Describe(event, guild)
         text = "|c" .. color .. string.gsub(text, "|r", "|r|c" .. color) .. "|r"
         self:Print(text)
     end
+end
+
+-- Level-up lines -----------------------------------------------------------------------------------
+-- A ding in the chat frame is a cheer, not a record: a gold star, "DING!", the level in white and a short
+-- tail, in a pink that nothing else in Tabard uses, so it stands apart from the teal login lines and the blue
+-- "Leveled" badge in the log. The history and the Overview keep Describe's plain "reached level 22" wording.
+-- Tails: a milestone has its own pool, any other level draws from the general one.
+local DING_COLOR = "ffff77cc"
+local DING_STAR = "|TInterface\\TargetingFrame\\UI-RaidTargetingIcon_1:14:14:0:0|t"
+local DING_TAILS = {
+    [10] = { "talents unlocked!", "double digits!", "the real game begins." },
+    [20] = { "twenty already!", "keep it rolling!", "look at them go!" },
+    [30] = { "THIRTY!", "big number!", "no stopping now!" },
+    [40] = { "MOUNT TIME!", "no more walking!", "go get that mount!" },
+    [50] = { "home stretch!", "ten to go!", "so close!" },
+    [60] = { "MAX LEVEL!", "SIXTY!", "they did it!" },
+}
+local DING_ANY = {
+    "onward!", "no stopping now!", "another one!", "the grind pays off.", "keep it rolling!",
+    "look at them go!", "mobs beware.", "one closer to 60.", "nice!",
+}
+function GL:DingLine(event, guild)
+    local who = event.who or "?"
+    local member = guild and self:Member(guild, who)
+    local name = member and (self:ColoredName(member) .. self:MainTag(guild, member)) or ("|cffffffff" .. who .. "|r")
+    local level, from = tonumber(event.level), tonumber(event.from)
+    local gained = (level and from) and (level - from) or nil
+    local pool = DING_TAILS[level] or DING_ANY
+    local tail = pool[math.random(#pool)]
+    local text = DING_STAR .. " DING! " .. name .. " hit level |cffffffff" .. tostring(event.level) .. "|r"
+        .. (gained and gained > 1 and (" (+" .. gained .. ")") or "") .. "! " .. tail
+    return "|c" .. DING_COLOR .. string.gsub(text, "|r", "|r|c" .. DING_COLOR) .. "|r"
 end
 
 -- A guild member logged in: one line in the chat frame, like the level-up lines, with who they are and when
@@ -628,6 +662,8 @@ SlashCmdList["TABARD"] = function(message)
         if GL.Shout then GL.Shout:Command(rest) end
     elseif command == "hints" then
         if GL.Hints then GL.Hints:Command(rest) end
+    elseif command == "invite" or command == "ginvite" then
+        if GL.Invite then GL.Invite:Command(rest) end
     elseif command == "nick" or command == "nickname" then
         -- /tabard nick Check Myspeed = Checky   (nothing after "=" clears it)
         local guild = GL:Guild()
@@ -667,6 +703,6 @@ SlashCmdList["TABARD"] = function(message)
         GL:Print(string.format("%s: %d members, %d with a join date, %d alt groups, %d bans, %d events recorded, %d scans.",
             guild.name, members, dated, GL:Count(guild.groups), GL:Count(guild.bans), #guild.events, guild.scans or 0))
     else
-        GL:Print("commands: |cffffffff/tabard|r opens the window, |cffffffff/tabard scan|r rescans the roster, |cffffffff/tabard sync|r asks other officers for their data, |cffffffff/tabard import|r previews a GRM import (|cffffffff/tabard import apply|r applies it), |cffffffff/tabard minimap|r toggles the button, |cffffffff/tabard status|r shows what is recorded, |cffffffff/tabard art next|r changes the background, |cffffffff/tabard welcome|r sets up welcome whispers for new members, |cffffffff/tabard shout|r sets up guild chat shoutouts for level milestones, |cffffffff/tabard nick NAME = NICKNAME|r sets what someone goes by in chat, |cffffffff/tabard users|r lists the other Tabard users in the guild and what they use, |cffffffff/tabard usage|r shows your own usage line to copy.")
+        GL:Print("commands: |cffffffff/tabard|r opens the window, |cffffffff/tabard scan|r rescans the roster, |cffffffff/tabard sync|r asks other officers for their data, |cffffffff/tabard import|r previews a GRM import (|cffffffff/tabard import apply|r applies it), |cffffffff/tabard minimap|r toggles the button, |cffffffff/tabard status|r shows what is recorded, |cffffffff/tabard art next|r changes the background, |cffffffff/tabard welcome|r sets up welcome whispers for new members, |cffffffff/tabard shout|r sets up guild chat shoutouts for level milestones, |cffffffff/tabard nick NAME = NICKNAME|r sets what someone goes by in chat, |cffffffff/tabard users|r lists the other Tabard users in the guild and what they use, |cffffffff/tabard usage|r shows your own usage line to copy, |cffffffff/tabard invite NAME|r puts up the Invite button.")
     end
 end
