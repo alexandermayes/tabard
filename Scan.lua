@@ -656,13 +656,18 @@ frame:SetScript("OnEvent", function(self, event, arg1)
         C_Timer.After(5, function() GL:RequestScan(true) end)
     elseif event == "GUILD_ROSTER_UPDATE" then
         if GL.db then
+            -- Put GL.quiet back after the pcall: an error midway would otherwise leave every announcement off.
+            local wasQuiet = GL.quiet
             local ok, err = pcall(GL.ProcessRoster, GL)
+            GL.quiet = wasQuiet
             if not ok then GL:Print("roster scan failed: " .. tostring(err)) end
         end
     elseif event == "GUILD_EVENT_LOG_UPDATE" then
         local guild = GL.db and GL:Guild()
         if guild and guild.seeded then
+            local wasQuiet = GL.quiet   -- as above: the import turns quiet on and an error would leave it on
             local ok, err = pcall(importGameLog, guild)
+            GL.quiet = wasQuiet
             if not ok then GL:Print("event log import failed: " .. tostring(err)) end
             if GL.OnLedgerChanged then GL:OnLedgerChanged(guild) end
         end
