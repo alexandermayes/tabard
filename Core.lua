@@ -105,12 +105,14 @@ end
 --   name, realm, created (first scan), scans (count), seeded, lastScan,
 --   members = { [name] = member }, former = { [name] = member }, events = { event, ... }, seen = { ["kind|p1|p2|rank"] = { t, ... } },
 --   groups = { [id] = { main = name, alts = { name, ... }, t } }, nextGroup,
---   bans = { [name] = { t, by, reason, class, guid, stamp } }, ranks = { [index] = name }, peers = { [name] = { version, t } }
+--   bans = { [name] = { t, by, reason, class, guid, stamp } }, ranks = { [index] = name }, peers = { [name] = { version, t } },
+--   pendingLeave = { [name] = { t, kind, by, at } } (a game-log leave read while the person still counted as a member)
 -- }
 -- member = { name, class, level, rank, rankIndex, note, onote, guid, firstSeen, lastSeen, lastOnline, online, missing,
 --   joined, joinedSource, invitedBy, promoted, promotedSource, group, custom, customBy, birthday = { m, d },
 --   safe = { kick, promote }, stamps = { field = when it was last set, for syncing }, left, leftKind }
--- event = { t, k, who, by, from, to, level, text, src, id }
+-- event = { t, k, who, by, from, to, level, text, src, id, g (claimed by a game-log entry),
+--   late (a join or leave the roster saw late: the earliest it could have happened, until the game's log dates it) }
 function GL:InitDB()
     if type(TabardDB) ~= "table" and type(GuildLedgerDB) == "table" then TabardDB = GuildLedgerDB end   -- migrated from GuildLedger
     if type(TabardDB) ~= "table" then TabardDB = {} end
