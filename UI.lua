@@ -2992,7 +2992,6 @@ local SHOUT_DEFAULTS = { enabled = false, levels = "10 20 30 40 50 60", every = 
 local NAME_STYLES = { firstlower = "first name, lowercase (zev)", first = "first name (Zev)", full = "full name (Zev Zev)", fulllower = "full name, lowercase (zev zev)" }
 local LOGIN_LABELS = { card = "Show the login card", always = "Open the window", todo = "Open it if the to-do list has items", never = "Stay closed" }
 local LOGIN_DEFAULT = "card"
-local NOTE_DATE_LABELS = { none = "Nothing", public = "The public note", officer = "The officer note" }
 
 local function welcomeSettings()
     if type(GL.settings.welcome) ~= "table" then GL.settings.welcome = {} end
@@ -3404,16 +3403,6 @@ local function buildSettingsPage()
     page.brightness:SetPoint("LEFT", page.brightnessLabel, "RIGHT", 8, 0)
     explain(page.brightness, "How much of the art shows through. Bright is closest to the talent window; subtle keeps long lists easiest to read.")
     y = y - 30
-    page.noteDateLabel = page.behaviourBox.body:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    page.noteDateLabel:SetPoint("TOPLEFT", page.behaviourBox.body, "TOPLEFT", 4, y - 4)
-    page.noteDateLabel:SetText("Write the join date into:")
-    local noteItems = {}
-    for _, key in ipairs({ "none", "public", "officer" }) do
-        noteItems[#noteItems + 1] = { text = NOTE_DATE_LABELS[key], isChecked = function() return (GL.settings.noteJoinDate or "none") == key end, toggle = function() GL.settings.noteJoinDate = key GL:RefreshWindow() end }
-    end
-    page.noteDate = createFilter(page.behaviourBox.body, NOTE_DATE_LABELS.none, noteItems, 200)
-    page.noteDate:SetPoint("LEFT", page.noteDateLabel, "RIGHT", 8, 0)
-    explain(page.noteDate, "When someone joins and that note is empty, Tabard writes \"Joined 07 Nov 2026\" into it, the way Guild Roster Manager does. Needs note-editing rights.")
     -- Rank pickers: the trial rank and the newcomer rank by name, not by index. Both fall back to the newest
     -- rank (the highest index) when nothing is picked. The menu is rebuilt from the guild's rank list on every
     -- refresh (fillRankItems), so a renamed or added rank shows up.
@@ -3594,7 +3583,7 @@ local function buildSettingsPage()
         local behaviourRows = {}
         for _, option in ipairs(options) do behaviourRows[#behaviourRows + 1] = { w = page.options[option.key], kind = C, x = -4, gap = 4 } end
         behaviourRows[#behaviourRows + 1] = { w = page.minimap, kind = C, x = -4, gap = 8 }
-        for _, label in ipairs({ page.loginLabel, page.artLabel, page.brightnessLabel, page.noteDateLabel, page.trialRankLabel, page.promoteRankLabel }) do behaviourRows[#behaviourRows + 1] = { w = label, kind = P, x = 4, gap = 8 } end
+        for _, label in ipairs({ page.loginLabel, page.artLabel, page.brightnessLabel, page.trialRankLabel, page.promoteRankLabel }) do behaviourRows[#behaviourRows + 1] = { w = label, kind = P, x = 4, gap = 8 } end
         local behaviourUsed = flow(page.behaviourBox.body, behaviourRows)
         local thresholdRows = {}
         for _, item in ipairs(numbers) do
@@ -3632,7 +3621,6 @@ local function buildSettingsPage()
         page.login:SetLabel(LOGIN_LABELS[GL.settings.openOnLogin or LOGIN_DEFAULT] or LOGIN_LABELS[LOGIN_DEFAULT])
         page.art:SetLabel(THEME_LABELS[chosenTheme()] or THEME_LABELS[DEFAULT_THEME])
         page.brightness:SetLabel(WASH_LABELS[GL.settings.artBrightness or "normal"] or WASH_LABELS.normal)
-        page.noteDate:SetLabel(NOTE_DATE_LABELS[GL.settings.noteJoinDate or "none"] or NOTE_DATE_LABELS.none)
         for _, button in ipairs(page.rankPickers) do fillRankItems(button, button.key) end
         local okInfo, backupTime, backupLabel = pcall(function() if GL.BackupInfo then return GL:BackupInfo() end end)
         local okSize, size = pcall(function() if GL.DBSizeText then return GL:DBSizeText() end end)
@@ -3877,14 +3865,59 @@ local function buildCard()
         y = y - 26
         return row
     end
-    card.note = noteRow("Public note", function(text)
-        local ok, err = GL:SetNote(cardMember, text, false)
-        if not ok then GL:Print("could not set the note: " .. tostring(err)) else GL:RequestScan(true) end
-    end, "The guild note everyone can see (31 characters). Press Enter or Save to write it to the roster.")
-    card.onote = noteRow("Officer note", function(text)
-        local ok, err = GL:SetNote(cardMember, text, true)
-        if not ok then GL:Print("could not set the officer note: " .. tostring(err)) else GL:RequestScan(true) end
-    end, "The officer note from the guild roster (31 characters).")
+    -- The game's guild notes are read-only here: the client blocks addons from writing them (the game shows
+    -- "Tabard has been blocked from an action only available to the Blizzard UI"). So the two rows show the
+    -- note as text, and a secure "Edit in roster" button clicks the game's own guild micro button, which opens the
+    -- game's window untainted. The button is made once, here, outside combat. Its attributes are set once and
+    -- never touched again, and it is never shown or hidden later (it lives on the card, which hides with its
+    -- parent), so combat lockdown cannot get in the way. If the client has neither micro button, it stays hidden.
+    local rosterOpener = _G.GuildMicroButton or _G.SocialsMicroButton
+    local function noteView(label, hint, buttonName)
+        local row = CreateFrame("Frame", nil, card)
+        row:SetPoint("TOPLEFT", inset, "TOPLEFT", 10, y)
+        row:SetPoint("RIGHT", inset, "RIGHT", -10, 0)
+        row:SetHeight(24)
+        row.label = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        row.label:SetPoint("LEFT")
+        row.label:SetWidth(84)
+        row.label:SetJustifyH("LEFT")
+        row.label:SetTextColor(0.62, 0.62, 0.62)
+        row.label:SetText(label)
+        row.edit = CreateFrame("Button", buttonName, row, "SecureActionButtonTemplate, UIPanelButtonTemplate")
+        row.edit:SetSize(100, 22)
+        row.edit:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+        row.edit:SetText("Edit in roster")
+        row.edit:RegisterForClicks("LeftButtonUp")
+        row.edit:SetAttribute("useOnKeyDown", false)
+        if rosterOpener then
+            row.edit:SetAttribute("type", "click")
+            row.edit:SetAttribute("clickbutton", rosterOpener)
+        else
+            row.edit:Hide()
+        end
+        row.edit:HookScript("OnEnter", function(self)
+            tooltipLines(self, { { "Edit in roster" }, { "Opens the game's guild window. Find " .. plain(cardMember and cardMember.name or "the member") .. " there to edit the note; the game does not let addons write notes.", 0.62, 0.62, 0.62 } })
+        end)
+        row.edit:HookScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+        row.text = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        row.text:SetPoint("LEFT", row.label, "RIGHT", 10, 0)
+        row.text:SetPoint("RIGHT", row.edit, "LEFT", -8, 0)
+        row.text:SetJustifyH("LEFT")
+        row.text:SetWordWrap(false)
+        row.text:SetMaxLines(1)
+        -- A text string cannot take the mouse, so a transparent frame over it carries the tooltip with the full note.
+        row.hover = CreateFrame("Frame", nil, row)
+        row.hover:SetAllPoints(row.text)
+        row.hover:EnableMouse(true)
+        row.hover:SetScript("OnEnter", function(self)
+            tooltipLines(self, { { label }, { row.full ~= "" and row.full or "(empty)", 1, 1, 1 }, { hint, 0.62, 0.62, 0.62 } })
+        end)
+        row.hover:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+        y = y - 26
+        return row
+    end
+    card.note = noteView("Public note", "The guild note everyone can see.", "TabardUINotePublicEditButton")
+    card.onote = noteView("Officer note", "The officer note from the guild roster.", "TabardUINoteOfficerEditButton")
     card.custom = noteRow("Tabard note", function(text) GL:SetCustomNote(guildOf(), cardMember, text, "user") GL:RefreshWindow() end,
         "A longer note (160 characters) that only Tabard users see. Shared with other officers running the addon.")
     card.nick = noteRow("Nickname", function(text) GL:SetNickname(guildOf(), cardMember, text, "user") GL:RefreshWindow() end,
@@ -4109,8 +4142,15 @@ local function buildCard()
             row.box:SetEnabled(row.editable)
             row.save:SetEnabled(false)
         end
-        fill(card.note, member.note, GL:CanEditNote())
-        fill(card.onote, member.onote, GL:CanEditOfficerNote())
+        local function showNote(row, text, hidden)
+            row.full = hidden and "" or (text or "")
+            row.text:SetText(hidden and (GREY .. "(hidden)|r") or (row.full ~= "" and row.full or (GREY .. "(empty)|r")))
+        end
+        local canSeeOfficer = true
+        if C_GuildInfo and C_GuildInfo.CanViewOfficerNote then canSeeOfficer = C_GuildInfo.CanViewOfficerNote()
+        elseif CanViewOfficerNote then canSeeOfficer = CanViewOfficerNote() end
+        showNote(card.note, member.note, false)
+        showNote(card.onote, member.onote, not canSeeOfficer)
         fill(card.custom, member.custom, true)
         card.custom.editable = true
         card.custom.box:SetEnabled(true)

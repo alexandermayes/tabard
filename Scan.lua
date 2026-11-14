@@ -146,16 +146,6 @@ local function afterJoin(guild, member, kind)
             (ban.reason and ban.reason ~= "") and (": " .. ban.reason) or ""))
     end
     if GL.settings.autoAlts then GL:DetectAlt(guild, member) end
-    -- Optional, like Guild Roster Manager: write the join date into an empty public or officer note.
-    local where = GL.settings.noteJoinDate
-    if (where == "public" or where == "officer") and GL.SetNote then
-        local current = where == "officer" and member.onote or member.note
-        local allowed = where == "officer" and GL.CanEditOfficerNote and GL:CanEditOfficerNote() or (where == "public" and GL.CanEditNote and GL:CanEditNote())
-        if allowed and (current == nil or current == "") then
-            local text = (kind == "rejoin" and "Rejoined " or "Joined ") .. GL:FormatDate(member.joined or GL:Now())
-            pcall(GL.SetNote, GL, member, text, where == "officer")
-        end
-    end
     -- Welcomes only for joins seen live. The first scan after a login or reload lists everyone who joined
     -- while you were away; whispering them hours later reads as odd, so those are recorded but not welcomed.
     if GL.Welcome then GL.Welcome:OnJoin(guild, member, kind or "join", GL.sessionReady == true) end
