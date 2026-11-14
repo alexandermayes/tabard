@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.9
+
+- An Invite button that works on WoW Forever. Typing `/ginvite` in chat is refused by the client whenever a chat addon such as Prat is loaded, and an addon may not invite by itself. Tabard now keeps one secure "Invite Name" button, like the card's Promote button: your click on it runs `/ginvite` as your own command. It comes up in a small bar near the top of the screen (drag it where you like) when someone who is not in the guild whispers you (off with the "Offer an Invite button..." checkbox in Settings), from `/tabard invite Name`, and from "Invite to guild" in the right-click menu on a player, a party member, a friend or a chat name. A key binding, "Invite the last whisperer to the guild" under Tabard in the game's key bindings, clicks it without the mouse. The bar hides itself after a minute or on the X; in combat the name waits until combat ends. A whisper from someone on the ban list says so on the bar.
+
 ## 1.2.8
 
 - The login-mode dropdown in Settings no longer runs past the window: its choices read "Show the login card", "Open the window", "Open it if the to-do list has items", "Stay closed".

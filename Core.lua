@@ -81,6 +81,7 @@ local DEFAULT_SETTINGS = {
     mainTags = true,         -- "(main)" / "(alt of X)" after names on event lines
     firstWeek = true,        -- track new members' first week: time online, whether anyone talked to them
     anniversaries = true,    -- mention join anniversaries and birthdays at login
+    inviteBar = true,        -- offer the secure Invite button when someone outside the guild whispers you
     loginReport = true,      -- list who joined, left and changed rank while you were away, at login
     minimap = { shown = true, angle = 220 },
     windowPoint = nil,       -- saved window position { point, x, y }
@@ -628,6 +629,8 @@ SlashCmdList["TABARD"] = function(message)
         if GL.Shout then GL.Shout:Command(rest) end
     elseif command == "hints" then
         if GL.Hints then GL.Hints:Command(rest) end
+    elseif command == "invite" or command == "ginvite" then
+        if GL.Invite then GL.Invite:Command(rest) end
     elseif command == "nick" or command == "nickname" then
         -- /tabard nick Check Myspeed = Checky   (nothing after "=" clears it)
         local guild = GL:Guild()
@@ -667,6 +670,6 @@ SlashCmdList["TABARD"] = function(message)
         GL:Print(string.format("%s: %d members, %d with a join date, %d alt groups, %d bans, %d events recorded, %d scans.",
             guild.name, members, dated, GL:Count(guild.groups), GL:Count(guild.bans), #guild.events, guild.scans or 0))
     else
-        GL:Print("commands: |cffffffff/tabard|r opens the window, |cffffffff/tabard scan|r rescans the roster, |cffffffff/tabard sync|r asks other officers for their data, |cffffffff/tabard import|r previews a GRM import (|cffffffff/tabard import apply|r applies it), |cffffffff/tabard minimap|r toggles the button, |cffffffff/tabard status|r shows what is recorded, |cffffffff/tabard art next|r changes the background, |cffffffff/tabard welcome|r sets up welcome whispers for new members, |cffffffff/tabard shout|r sets up guild chat shoutouts for level milestones, |cffffffff/tabard nick NAME = NICKNAME|r sets what someone goes by in chat, |cffffffff/tabard users|r lists the other Tabard users in the guild and what they use, |cffffffff/tabard usage|r shows your own usage line to copy.")
+        GL:Print("commands: |cffffffff/tabard|r opens the window, |cffffffff/tabard scan|r rescans the roster, |cffffffff/tabard sync|r asks other officers for their data, |cffffffff/tabard import|r previews a GRM import (|cffffffff/tabard import apply|r applies it), |cffffffff/tabard minimap|r toggles the button, |cffffffff/tabard status|r shows what is recorded, |cffffffff/tabard art next|r changes the background, |cffffffff/tabard welcome|r sets up welcome whispers for new members, |cffffffff/tabard shout|r sets up guild chat shoutouts for level milestones, |cffffffff/tabard nick NAME = NICKNAME|r sets what someone goes by in chat, |cffffffff/tabard users|r lists the other Tabard users in the guild and what they use, |cffffffff/tabard usage|r shows your own usage line to copy, |cffffffff/tabard invite NAME|r puts up the Invite button.")
     end
 end

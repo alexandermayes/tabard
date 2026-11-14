@@ -3354,9 +3354,10 @@ local function buildSettingsPage()
         { key = "loginReport", label = "At login, list who joined, left and changed rank while I was away" },
         { key = "hints", label = "Show the main's name, or the nickname, after names in guild chat", default = true },
         { key = "requests", label = "Accept requests whispered to you (!main, !bday, !loa); they land on the To-do tab", default = true },
+        { key = "inviteBar", label = "Offer an Invite button when someone outside the guild whispers you (your click sends it)", default = true },
         { key = "raidTracking", label = "Track raid attendance, bench and loot while you are in a raid group", default = true },
     }
-    local behaviourHeight = 34 + 12 * 30 + 6
+    local behaviourHeight = 34 + 13 * 30 + 6
     page.behaviourBox = section(content, "Sharing and tooltips", rightX, -PAD, rightWidth, behaviourHeight)
     page.options = {}
     page.optionDefaults = {}
@@ -4285,12 +4286,22 @@ local function menuMemberFor(contextData)
     name = GL:ShortName(name)
     local guild = GL:Guild()
     if not guild then return nil end
-    return guild.members[name], guild
+    return guild.members[name], guild, name
 end
 
 local function addMenuEntries(ownerRegion, rootDescription, contextData)
-    local member, guild = menuMemberFor(contextData)
-    if not (member and rootDescription and rootDescription.CreateButton) then return end
+    local member, guild, name = menuMemberFor(contextData)
+    if not (rootDescription and rootDescription.CreateButton) then return end
+    if not member then
+        -- Someone outside the guild: offer the secure Invite button (the client refuses addon invites, and
+        -- /ginvite typed in chat while a chat addon is loaded).
+        if not (name and guild and GL.Invite and name ~= GL:PlayerName()) then return end
+        if CanGuildInvite and not CanGuildInvite() then return end
+        if rootDescription.CreateDivider then rootDescription:CreateDivider() end
+        if rootDescription.CreateTitle then rootDescription:CreateTitle("Tabard") end
+        rootDescription:CreateButton("Invite to guild", function() GL.Invite:Arm(name, name .. " from the right-click menu.") end)
+        return
+    end
     if rootDescription.CreateDivider then rootDescription:CreateDivider() end
     if rootDescription.CreateTitle then rootDescription:CreateTitle("Tabard") end
     rootDescription:CreateButton("Open in Tabard", function() GL:OpenMember(member.name) end)
