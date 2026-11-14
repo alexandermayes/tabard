@@ -500,9 +500,18 @@ function GL:ProcessRoster()
     guild.partialScan = partial
     if not partial then guild.lastCount = total end
     local wasQuiet = self.quiet
+    if guild.seeded and guild.repaired ~= 1 and self.RepairLedger then
+        guild.repaired = 1
+        local done, report = pcall(self.RepairLedger, self, guild)
+        local line
+        if done then line = self.RepairLine and self:RepairLine(report)
+        else line = "the ledger repair failed (" .. tostring(report) .. "); the backup from before the repair can be restored with /tabard restore." end
+        if line then self:Print(line) end
+    end
     if not guild.seeded then
         self.quiet = true
         seedGuild(guild, roster, now)
+        guild.repaired = 1   -- nothing old to repair in a ledger that starts now
         self.quiet = wasQuiet
         self:Print(string.format("started keeping records for %s with %d members. Joins, leaves, promotions and level-ups are recorded from now on.", guild.name, total))
     else
