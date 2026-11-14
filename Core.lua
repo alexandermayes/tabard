@@ -32,6 +32,7 @@ GL.prefix = "|TInterface\\AddOns\\Tabard\\logo:14:14:0:0|t |cffffd100Tabard:|r "
 GL.KINDS = {
     join = { order = 1, label = "Joined", color = "ff33dd33" },
     rejoin = { order = 2, label = "Rejoined", color = "ff33dd33" },
+    invite = { order = 2.5, label = "Invited", color = "ff8fcf8f" },
     leave = { order = 3, label = "Left", color = "ffff5555" },
     kick = { order = 4, label = "Removed", color = "ffff5555" },
     promote = { order = 5, label = "Promoted", color = "ffffd100" },
@@ -103,14 +104,16 @@ end
 -- TabardDB = { version, settings, guilds = { [key] = guild } }
 -- guild = {
 --   name, realm, created (first scan), scans (count), seeded, lastScan,
---   members = { [name] = member }, former = { [name] = member }, events = { event, ... }, seen = { [fingerprint] = t },
+--   members = { [name] = member }, former = { [name] = member }, events = { event, ... }, seen = { ["kind|p1|p2|rank"] = { t, ... } },
 --   groups = { [id] = { main = name, alts = { name, ... }, t } }, nextGroup,
---   bans = { [name] = { t, by, reason, class, guid, stamp } }, ranks = { [index] = name }, peers = { [name] = { version, t } }
+--   bans = { [name] = { t, by, reason, class, guid, stamp } }, ranks = { [index] = name }, peers = { [name] = { version, t } },
+--   pendingLeave = { [name] = { t, kind, by, at } } (a game-log leave read while the person still counted as a member)
 -- }
 -- member = { name, class, level, rank, rankIndex, note, onote, guid, firstSeen, lastSeen, lastOnline, online, missing,
 --   joined, joinedSource, invitedBy, promoted, promotedSource, group, custom, customBy, birthday = { m, d },
 --   safe = { kick, promote }, stamps = { field = when it was last set, for syncing }, left, leftKind }
--- event = { t, k, who, by, from, to, level, text, src, id }
+-- event = { t, k, who, by, from, to, level, text, src, id, g (claimed by a game-log entry),
+--   late (a join or leave the roster saw late: the earliest it could have happened, until the game's log dates it) }
 function GL:InitDB()
     if type(TabardDB) ~= "table" and type(GuildLedgerDB) == "table" then TabardDB = GuildLedgerDB end   -- migrated from GuildLedger
     if type(TabardDB) ~= "table" then TabardDB = {} end
@@ -145,7 +148,41 @@ function GL:Guild()
     for _, field in ipairs({ "members", "former", "events", "seen", "groups", "bans", "ranks", "peers" }) do
         if type(guild[field]) ~= "table" then guild[field] = {} end
     end
+    self:UpgradeSeen(guild)
     return guild
+end
+
+-- Converts old game-log fingerprints ("kind|p1|p2|rank|hour" = time) to the current form
+-- ("kind|p1|p2|rank" = { time, ... }, ascending). Times of one entry less than an hour apart were the same
+-- entry read in two hour buckets and are merged; times further apart are kept. Safe to run repeatedly.
+function GL:UpgradeSeen(guild)
+    local seen = guild.seen
+    local converted
+    for key, value in pairs(seen) do
+        if type(value) == "number" then
+            converted = converted or {}
+            local newKey = key:match("^(.*)|[^|]*$")
+            if newKey then
+                converted[newKey] = converted[newKey] or {}
+                table.insert(converted[newKey], value)
+            end
+            seen[key] = nil
+        elseif type(value) ~= "table" then
+            seen[key] = nil
+        end
+    end
+    if not converted then return end
+    for key, times in pairs(converted) do
+        table.sort(times)
+        local merged = {}
+        for _, t in ipairs(times) do
+            if #merged == 0 or t - merged[#merged] >= 3600 then merged[#merged + 1] = t end
+        end
+        local list = seen[key] or {}
+        for _, t in ipairs(merged) do list[#list + 1] = t end
+        table.sort(list)
+        seen[key] = list
+    end
 end
 
 function GL:Member(guild, name)
@@ -371,17 +408,48 @@ end
 -- Events -------------------------------------------------------------------------------------------
 local nextId = 0
 
--- Adds a record to the guild's ledger. fields: who, by, from, to, level, text, src ("scan" | "game" | "user" | "sync" | "import").
+-- Adds a record to the guild's ledger, in time order (oldest first). fields: who, by, from, to, level, text, src ("scan" | "game" | "user" | "sync" | "import").
+-- An event with the same time as an existing one goes after it, so ties keep their insertion order.
 function GL:AddEvent(guild, kind, fields, t)
     nextId = nextId + 1
     local event = { t = t or self:Now(), k = kind, src = fields.src or "scan", id = string.format("%x%03d", self:Now(), nextId % 1000) }
     for key, value in pairs(fields) do
         if key ~= "src" then event[key] = value end
     end
-    guild.events[#guild.events + 1] = event
+    local list = guild.events
+    -- A join settles an earlier invite for the same person: the latest invite from a week before to two hours
+    -- after the join goes, and its inviter is kept when the join has none.
+    if kind == "join" or kind == "rejoin" then
+        for i = #list, 1, -1 do
+            local other = list[i]
+            if other.t < event.t - 604800 then break end   -- events are in time order
+            if other.k == "invite" and other.who == event.who and other.t <= event.t + 7200 then
+                if not event.by then event.by = other.by end
+                table.remove(list, i)
+                local joiner = guild.members[event.who] or guild.former[event.who]
+                if joiner and event.by then joiner.invitedBy = joiner.invitedBy or event.by end
+                break
+            end
+        end
+    end
+    -- Search from the end: new events are almost always the newest, so this usually appends.
+    local pos = #list + 1
+    while pos > 1 and list[pos - 1].t > event.t do pos = pos - 1 end
+    table.insert(list, pos, event)
     self:Announce(event, guild)
     if self.OnLedgerChanged then self:OnLedgerChanged(guild, event) end
     return event
+end
+
+-- Sorts the guild's ledger in place, oldest first. Stable: events with the same time keep their existing order.
+function GL:SortEvents(guild)
+    local list = guild.events
+    local position = {}
+    for i, event in ipairs(list) do position[event] = i end
+    table.sort(list, function(a, b)
+        if a.t ~= b.t then return a.t < b.t end
+        return position[a] < position[b]
+    end)
 end
 
 -- The most recent event of a kind about a member within `window` seconds of `t`, or nil.
@@ -393,6 +461,31 @@ function GL:FindEvent(guild, kind, who, t, window)
             if not best or math.abs(event.t - t) < math.abs(best.t - t) then best = event end
         end
         if event.t < t - window - 86400 then break end   -- events are roughly in time order
+    end
+    return best
+end
+
+-- Event kinds that describe the same happening: a rejoin is a join, a kick is a leave.
+GL.KIND_CLASS = { join = "join", rejoin = "join", leave = "leave", kick = "leave" }
+
+-- The event a game-log entry most plausibly describes: the nearest one of the same kind class about the
+-- same member, within two hours of `t` (an hour when the event itself came from the game log, whose times
+-- are only good to the hour). Events already claimed by a game-log entry (event.g) are skipped.
+-- src: where the entry came from (normally "game"). opts (optional): ignoreClaim = true also considers claimed
+-- events; exclude = an event never to return; claimed = a set (keyed by event) of events to skip.
+function GL:MatchEvent(guild, kind, who, t, src, opts)
+    opts = opts or {}
+    local class = self.KIND_CLASS[kind] or kind
+    local best, bestGap
+    for i = #guild.events, 1, -1 do
+        local event = guild.events[i]
+        if event.t < t - 7200 - 86400 then break end   -- events are roughly in time order
+        if event.who == who and (self.KIND_CLASS[event.k] or event.k) == class
+            and event ~= opts.exclude and not (opts.claimed and opts.claimed[event])
+            and (opts.ignoreClaim or not event.g) then
+            local gap = math.abs(event.t - t)
+            if gap <= (event.src == "game" and 3600 or 7200) and (not best or gap < bestGap) then best, bestGap = event, gap end
+        end
     end
     return best
 end
@@ -425,6 +518,8 @@ function GL:Describe(event, guild)
         if event.level then text = text .. " at level " .. event.level end
         if by then text = text .. ", invited by " .. by end
         return text .. "."
+    elseif kind == "invite" then
+        return name .. " was invited to the guild" .. (by and (" by " .. by) or "") .. "."
     elseif kind == "leave" or kind == "kick" then
         local text = name .. (kind == "kick" and " was removed from the guild" or " left the guild")
         if by and kind == "kick" then text = text .. " by " .. by end

@@ -7,7 +7,11 @@ local ADDON_NAME, GL = ...
 
 local SCAN_INTERVAL = 15          -- seconds between roster requests while the game keeps sending updates
 local LEAVE_CONFIRM_SCANS = 2     -- a member must be missing from this many scans in a row before "left" is recorded
-local GAME_LOG_WINDOW = 3 * 3600  -- how far apart a scan event and a game-log entry may be and still be the same thing
+local STALE_AFTER_LEAVE = 120     -- seconds after a live leave line during which a roster still listing the leaver is stale
+local LATE_GAP = 600              -- a roster read this long after the previous one sees joins and leaves late
+local LATE_FLOOR = 30 * 86400     -- with no earlier roster read, a change seen late is placed no earlier than this long ago
+local PENDING_KEEP = 86400        -- how long a game-log leave read while the person still counted as a member is kept
+local SEEN_WINDOW = 2 * 3600    -- how far apart two readings of the same game-log entry may be (the game only gives the hour)
 local SEEN_KEEP = 60 * 86400      -- how long game-log fingerprints are remembered
 
 local frame = CreateFrame("Frame")
@@ -18,10 +22,16 @@ local lastTick                     -- when newcomers were last credited time onl
 -- way to know the inviter when it is you. Keyed by lower-cased name; kept a quarter of an hour.
 local INVITE_KEEP = 900
 local pendingInvites = {}
-local invitePattern
-if ERR_GUILD_INVITE_S then
-    invitePattern = "^" .. string.gsub(string.gsub(ERR_GUILD_INVITE_S, "[%(%)%.%%%+%-%*%?%[%]%^%$]", "%%%0"), "%%%%s", "(.+)") .. "$"
+-- Turns a game string such as "%s has left the guild." into a Lua pattern that captures each %s.
+function GL:PatternFrom(globalString)
+    if type(globalString) ~= "string" then return nil end
+    return "^" .. string.gsub(string.gsub(globalString, "[%(%)%.%%%+%-%*%?%[%]%^%$]", "%%%0"), "%%%%s", "(.+)") .. "$"
 end
+
+local invitePattern = GL:PatternFrom(ERR_GUILD_INVITE_S)
+local joinPattern = GL:PatternFrom(ERR_GUILD_JOIN_S)
+local leavePattern = GL:PatternFrom(ERR_GUILD_LEAVE_S)
+local removePattern = GL:PatternFrom(ERR_GUILD_REMOVE_SS)
 
 local function noteInvite(text)
     if not (invitePattern and type(text) == "string") or (issecretvalue and issecretvalue(text)) then return end
@@ -127,7 +137,7 @@ local function updateMember(member, line, now)
     member.mobile = line.mobile
     member.lastSeen = now
     if line.lastOnline then member.lastOnline = line.lastOnline end
-    member.missing = nil
+    member.missing, member.missingLate = nil, nil
 end
 
 -- Remembers rank names by index (used for the newcomer rank and the Tools page).
@@ -175,8 +185,38 @@ local function seedGuild(guild, roster, now)
     guild.seeded = now
 end
 
--- Compares the saved roster with the live one and records what changed.
-local function diffRoster(guild, roster, now, partial)
+-- A member is gone: move them to the former list and log the leave or removal. Shared by the roster diff and
+-- the live system-chat lines so both record the same fields. live: from a chat line. late: the roster saw it
+-- late; the earliest time it could have happened (the event log fills in the real one, see ImportGameLogEntries).
+local function recordLeave(guild, name, member, kind, by, now, live, late)
+    local t, fromGame = now, nil
+    -- The game's log may already have named this leave (time, removal, remover) while they still counted as a
+    -- member. A chat line is live and exact, so it only clears that note. One older than their join is stale.
+    local pending = guild.pendingLeave and guild.pendingLeave[name]
+    if pending then
+        guild.pendingLeave[name] = nil
+        if not live and type(pending.t) == "number" and (now - (pending.at or 0)) <= PENDING_KEEP
+            and pending.t >= (member.joined or member.firstSeen or 0) then
+            t, kind, fromGame, late = pending.t, pending.kind or kind, true, nil
+            if kind == "kick" then by = pending.by or by end
+        end
+    end
+    guild.members[name] = nil
+    member.missing, member.missingLate = nil, nil
+    -- From a chat line: the roster cache often still lists them for a moment (see the join branch of diffRoster).
+    member.leftLive, member.joinLive = live and now or nil, nil
+    member.online = false
+    member.left, member.leftKind = t, kind
+    if kind == "kick" then member.leftBy = by end
+    guild.former[name] = member
+    return GL:AddEvent(guild, kind, { who = name, by = by, level = member.level, from = member.rank, since = member.joined,
+        g = fromGame, late = late }, t)
+end
+
+-- Compares the saved roster with the live one and records what changed. prevScan: the previous roster read.
+-- late: set when this read may find joins and leaves hours old (a long gap since the previous read):
+-- the earliest they could have happened. Such events carry it as event.late until the game's log dates them.
+local function diffRoster(guild, roster, now, partial, prevScan, late)
     local members = guild.members
     local officerNotes = canSeeOfficerNotes()
     local inactiveAfter = (GL.settings.inactiveDays or 30) * 86400
@@ -201,7 +241,14 @@ local function diffRoster(guild, roster, now, partial)
     -- Changes and joins.
     for name, line in pairs(roster) do
         local member = members[name]
-        if member then
+        -- Right after a live leave line the game often sends a roster that still lists the leaver. Skip them
+        -- for a short while, unless a "has joined the guild" line for them came after the leave.
+        local former = not member and guild.former[name]
+        local stale = former and former.leftLive and (now - former.leftLive) <= STALE_AFTER_LEAVE
+            and not (former.joinLive and former.joinLive >= former.leftLive)
+        if stale then
+            -- a former member the roster cache has not caught up on yet: nothing to record
+        elseif member then
             if line.level and member.level and line.level > member.level then
                 GL:AddEvent(guild, "level", { who = name, from = member.level, level = line.level }, now)
                 if GL.Shout then GL.Shout:OnLevel(guild, name, member.level, line.level, line.online) end
@@ -241,12 +288,13 @@ local function diffRoster(guild, roster, now, partial)
             updateMember(member, line, now)
             if noteChanged and GL.settings.autoAlts then GL:DetectAlt(guild, member) end
         else
-            local former = guild.former[name]
             local kind = former and "rejoin" or "join"
+            local leftAt = former and former.left or 0
             member = former or { firstSeen = now }
             guild.former[name] = nil
             updateMember(member, line, now)
-            member.left, member.leftKind = nil, nil
+            member.left, member.leftKind, member.leftBy = nil, nil, nil
+            member.leftLive, member.joinLive = nil, nil
             member.joined, member.joinedSource = now, "scan"
             member.promoted, member.promotedSource = nil, nil
             GL:Stamp(member, "joined", now)
@@ -254,9 +302,34 @@ local function diffRoster(guild, roster, now, partial)
             members[name] = member
             -- Who invited them: your own invite is known at once from the system line; anyone else's comes from
             -- the game's event log, so the chat line waits a few seconds for it (level and inviter, like GRM's line).
-            local by = inviterFor(name, now) or member.invitedBy
+            -- The game's log may have been read first and already recorded this joining: reuse that event.
+            -- Only one newer than their departure: an earlier join belongs to the stint they just ended.
+            local event = GL:MatchEvent(guild, "join", name, now, "scan", { ignoreClaim = true })
+            if event and event.t < leftAt then event = nil end
+            -- A join read from the game's log since the previous roster read is this one too, however long ago.
+            if not event and prevScan then
+                for i = #guild.events, 1, -1 do
+                    local other = guild.events[i]
+                    if other.t < prevScan then break end   -- events are in time order
+                    if other.who == name and (other.k == "join" or other.k == "rejoin") and other.src == "game" and other.t >= leftAt then
+                        event = other
+                        break
+                    end
+                end
+            end
+            local by = inviterFor(name, now) or member.invitedBy or (event and event.by)
             if by then member.invitedBy = member.invitedBy or by end
-            local event = GL:AddEvent(guild, kind, { who = name, level = line.level, by = by, hold = not by or nil }, now)
+            if event then
+                event.k = kind
+                event.level = event.level or line.level
+                event.by = event.by or by
+                event.hold = not by or nil
+                -- Seen late, the game's time is the real join date (better than the time we happened to look).
+                if late and event.src == "game" then member.joined, member.joinedSource = event.t, "game" end
+            else
+                event = GL:AddEvent(guild, kind, { who = name, level = line.level, by = by, hold = not by or nil,
+                    late = late and math.max(late, leftAt) or nil }, now)
+            end
             if by then
                 GL:Announce(event, guild)
             else
@@ -273,18 +346,23 @@ local function diffRoster(guild, roster, now, partial)
         end
     end
 
+    -- The stale-roster guard of a live leave ends after a while, or once a complete roster no longer lists them.
+    for name, former in pairs(guild.former) do
+        if former.leftLive and ((now - former.leftLive) > STALE_AFTER_LEAVE or (not partial and not roster[name])) then
+            former.leftLive, former.joinLive = nil, nil
+        end
+    end
+
     -- Leaves: only from a complete roster, and only after the member has been missing from several scans in a row.
     if partial then return end
     for name, member in pairs(members) do
         if not roster[name] then
             member.missing = (member.missing or 0) + 1
+            if late and member.missing == 1 then member.missingLate = true end
             if member.missing >= LEAVE_CONFIRM_SCANS then
-                members[name] = nil
-                member.missing = nil
-                member.online = false
-                member.left, member.leftKind = now, "leave"
-                guild.former[name] = member
-                GL:AddEvent(guild, "leave", { who = name, level = member.level, from = member.rank, since = member.joined }, now)
+                -- Seen late (on this read or the first one that missed them): they left after they were last listed.
+                local leftLate = (late or member.missingLate) and (member.lastSeen or late or (now - LATE_FLOOR)) or nil
+                recordLeave(guild, name, member, "leave", nil, now, nil, leftLate)
             end
         end
     end
@@ -298,75 +376,254 @@ local function gameLogTime(now, years, months, days, hours)
     return now - ((((years or 0) * 12 + (months or 0)) * 30.4 + (days or 0)) * 24 + (hours or 0)) * 3600
 end
 
+-- Merges a list of game-log entries ({ kind, p1, p2, rank, t }, absolute t) into the ledger. Entries already
+-- merged on an earlier read are recognised by guild.seen (fingerprint -> list of times) and skipped; the hour
+-- the game reports drifts, so times are compared with a tolerance, one-to-one. opts.replay = true skips that
+-- check (and does not remember the entries) and instead pairs entries with events one-to-one within the call,
+-- ignoring earlier claims; the one-time repair uses it.
+function GL:ImportGameLogEntries(guild, entries, opts)
+    opts = opts or {}
+    local replay = opts.replay
+    local now = self:Now()
+    local wasQuiet = self.quiet
+    self.quiet = true   -- history is never announced
+    local held = {}   -- joins whose chat line waited for the inviter
+    for _, entry in ipairs(entries) do
+        entry.key = table.concat({ entry.kind, entry.p1, entry.p2 or "", entry.rank or "" }, "|")
+    end
+    -- Entries seen on an earlier read pair one-to-one with the remembered times, nearest first.
+    local old = {}
+    if not replay then
+        local byKey = {}
+        for _, entry in ipairs(entries) do
+            byKey[entry.key] = byKey[entry.key] or {}
+            table.insert(byKey[entry.key], entry)
+        end
+        for key, list in pairs(byKey) do
+            local times = guild.seen[key]
+            if times and #times > 0 then
+                table.sort(list, function(a, b) return a.t < b.t end)
+                local used = {}
+                for _, entry in ipairs(list) do
+                    local best
+                    for j, st in ipairs(times) do
+                        if not used[j] and math.abs(st - entry.t) <= SEEN_WINDOW
+                            and (not best or math.abs(st - entry.t) < math.abs(times[best] - entry.t)) then best = j end
+                    end
+                    if best then used[best] = true; old[entry] = true end
+                end
+            end
+        end
+    end
+    -- Per-call claims. Join and invite entries describe the same joining, so each kind keeps its own set and
+    -- ignores the other's claim; everything else is claimed once, for good (or per call when replaying).
+    local claimedBy = { invite = {}, join = {}, other = {} }
+    local function match(kind, who, t)
+        local opt
+        if kind == "invite" or kind == "join" then
+            opt = { ignoreClaim = true, claimed = claimedBy[kind] }
+        elseif replay then
+            opt = { ignoreClaim = true, claimed = claimedBy.other }
+        end
+        return self:MatchEvent(guild, kind == "invite" and "join" or kind, who, t, "game", opt)
+    end
+    local function claim(kind, event)
+        event.g = true
+        claimedBy[(kind == "invite" or kind == "join") and kind or "other"][event] = true
+    end
+    local function create(kind, eventKind, fields, t)
+        fields.src = "game"
+        local event = self:AddEvent(guild, eventKind, fields, t)
+        claim(kind, event)
+        return event
+    end
+    -- Joins and leaves the roster saw late (event.late = the earliest they could have happened) take their time,
+    -- inviter or remover from the log entry that describes them. Not while replaying (the repair).
+    local lates = {}
+    if not replay then
+        for _, event in ipairs(guild.events) do
+            if event.late then lates[#lates + 1] = event end
+        end
+    end
+    local function moveTo(event, t)   -- a new time, kept in time order; not announced again
+        local list = guild.events
+        for i = #list, 1, -1 do
+            if list[i] == event then table.remove(list, i) break end
+        end
+        event.t = t
+        local pos = #list + 1
+        while pos > 1 and list[pos - 1].t > t do pos = pos - 1 end
+        table.insert(list, pos, event)
+    end
+    local function setJoined(person, t)
+        -- Directly, not through SetJoinDate: the "scan" date of a late join is only when we looked (a ceiling),
+        -- so the game's time replaces it even though "scan" normally outranks "game".
+        person.joined, person.joinedSource = t, "game"
+        self:Stamp(person, "joined", now)
+    end
+    local LATE_CLASS = { invite = "join", join = "join", quit = "leave", remove = "leave" }
+    local function claimLate(kind, player1, player2, t)
+        local class = LATE_CLASS[kind]
+        if #lates == 0 or not class then return false end
+        local who = (kind == "invite" or kind == "remove") and player2 or player1
+        if not who then return false end
+        local event
+        for _, other in ipairs(lates) do
+            if other.late and other.who == who and self.KIND_CLASS[other.k] == class
+                and t >= other.late - 3600 and t <= other.t + 3600
+                and (not event or math.abs(other.t - t) < math.abs(event.t - t)) then event = other end
+        end
+        if not event then return false end
+        local person = guild.members[who] or guild.former[who]
+        if kind == "invite" then
+            -- The inviter, and a time until the join entry itself gives one (the event stays late for it).
+            event.by = event.by or player1
+            if person then person.invitedBy = person.invitedBy or player1 end
+            if event.hold then event.hold = nil; held[#held + 1] = event end
+            moveTo(event, t)
+            if person then setJoined(person, t) end
+        elseif kind == "join" then
+            moveTo(event, t)
+            event.late = nil
+            if person then setJoined(person, t) end
+        else
+            moveTo(event, t)
+            event.late = nil
+            local former = guild.former[who]
+            if kind == "remove" then
+                event.k, event.by = "kick", player1
+                if former then former.leftKind, former.leftBy = "kick", player1 end
+            end
+            if former then former.left = t end
+        end
+        claim(kind, event)
+        return true
+    end
+    -- A quit or removal read while the person still counts as a member (the roster needs two reads to confirm
+    -- a leave): kept until the roster records the leave, which then takes this time, kind and remover.
+    local function notePending(name, t, leftKind, by)
+        guild.pendingLeave = guild.pendingLeave or {}
+        for other, pending in pairs(guild.pendingLeave) do
+            if type(pending) ~= "table" or now - (pending.at or 0) > PENDING_KEEP then guild.pendingLeave[other] = nil end
+        end
+        guild.pendingLeave[name] = { t = t, kind = leftKind, by = by, at = now }
+    end
+    for _, entry in ipairs(entries) do
+        if not old[entry] then
+            local kind, player1, player2, rank, t = entry.kind, entry.p1, entry.p2, entry.rank, entry.t
+            if not replay then
+                local times = guild.seen[entry.key]
+                if not times then times = {}; guild.seen[entry.key] = times end
+                local pos = #times + 1
+                while pos > 1 and times[pos - 1] > t do pos = pos - 1 end
+                table.insert(times, pos, t)
+            end
+            if claimLate(kind, player1, player2, t) then
+                -- a join or leave the roster saw late: dated above
+            elseif kind == "invite" and player2 then
+                -- Looking up the joining is non-exclusive: several invites (two officers, or one remembered at two
+                -- times) can describe one join, and none of them may add a second one.
+                local event = self:MatchEvent(guild, "join", player2, t, "game", { ignoreClaim = true })
+                if event then
+                    claim(kind, event)
+                    event.by = event.by or player1
+                    local joiner = guild.members[player2]
+                    if joiner then joiner.invitedBy = joiner.invitedBy or player1 end
+                    if event.hold then event.hold = nil; held[#held + 1] = event end
+                elseif guild.members[player2] then
+                    self:SetJoinDate(guild, player2, t, "game")
+                    guild.members[player2].invitedBy = guild.members[player2].invitedBy or player1
+                    create(kind, "join", { who = player2, by = player1 }, t)
+                else
+                    -- Nobody joined (yet): the invite itself is the record. Replaying must not add it twice.
+                    local twin = replay and self:MatchEvent(guild, "invite", player2, t, "game", { ignoreClaim = true, claimed = claimedBy.other })
+                    if twin then
+                        claimedBy.other[twin] = true
+                        twin.g = true
+                        twin.by = twin.by or player1
+                    else
+                        create("other", "invite", { who = player2, by = player1 }, t)
+                    end
+                end
+            elseif kind == "join" then
+                local event = match("join", player1, t)
+                if event then
+                    claim(kind, event)
+                else
+                    local member = guild.members[player1]
+                    if member then
+                        self:SetJoinDate(guild, player1, t, "game")
+                    else
+                        local former = guild.former[player1]
+                        if former and not former.joined then former.joined, former.joinedSource = t, "game" end
+                    end
+                    create(kind, "join", { who = player1 }, t)
+                end
+            elseif (kind == "promote" or kind == "demote") and player2 then
+                local event = match(kind, player2, t)
+                if event then
+                    claim(kind, event)
+                    event.by = event.by or player1
+                else
+                    create(kind, kind, { who = player2, by = player1, to = rank }, t)
+                end
+                local member = guild.members[player2]
+                if member and (not member.promoted or t > member.promoted) then self:SetPromotedDate(guild, player2, t, "game") end
+            elseif kind == "remove" and player2 then
+                local event = match("leave", player2, t)
+                if not guild.members[player2] then self:EnsureFormer(guild, player2, t, "kick", player1, rank) end
+                if event then
+                    claim(kind, event)
+                    event.k, event.by = "kick", event.by or player1
+                elseif not guild.members[player2] then
+                    local former = guild.former[player2]
+                    create(kind, "kick", { who = player2, by = player1, from = rank, since = former and former.joined }, t)
+                elseif not replay then
+                    notePending(player2, t, "kick", player1)
+                end
+            elseif kind == "quit" then
+                local event = match("leave", player1, t)
+                if not guild.members[player1] then self:EnsureFormer(guild, player1, t, "leave", nil, rank) end
+                if event then
+                    claim(kind, event)
+                elseif not guild.members[player1] then
+                    local former = guild.former[player1]
+                    create(kind, "leave", { who = player1, from = rank, since = former and former.joined }, t)
+                elseif not replay then
+                    notePending(player1, t, "leave", nil)
+                end
+            end
+        end
+    end
+    for _, entry in ipairs(entries) do entry.key = nil end
+    self.quiet = wasQuiet
+    for _, event in ipairs(held) do self:Announce(event, guild) end
+    -- Forget old fingerprints, time by time.
+    for key, times in pairs(guild.seen) do
+        for i = #times, 1, -1 do
+            if now - times[i] > SEEN_KEEP then table.remove(times, i) end
+        end
+        if #times == 0 then guild.seen[key] = nil end
+    end
+end
+
+-- Reads the game's event log and merges it into the ledger.
 local function importGameLog(guild)
     if not GetNumGuildEvents then return end
     local count = GetNumGuildEvents()
     if not count or count == 0 then return end
     local now = GL:Now()
-    local wasQuiet = GL.quiet
-    GL.quiet = true   -- history is never announced
-    local held = {}   -- joins whose chat line waited for the inviter
+    local entries = {}
     for i = 1, count do
         local kind, player1, player2, rank, years, months, days, hours = GetGuildEventInfo(i)
         if GL:IsUsable(kind) and GL:IsUsable(player1) and type(player1) == "string" then
             player1 = GL:ShortName(player1)
             player2 = (GL:IsUsable(player2) and type(player2) == "string") and GL:ShortName(player2) or nil
             rank = GL:IsUsable(rank) and rank or nil
-            local t = gameLogTime(now, years, months, days, hours)
-            local key = table.concat({ kind, player1, player2 or "", rank or "", tostring(math.floor(t / 3600)) }, "|")
-            if not guild.seen[key] then
-                guild.seen[key] = t
-                if kind == "invite" and player2 then
-                    local event = GL:FindEvent(guild, "join", player2, t, GAME_LOG_WINDOW) or GL:FindEvent(guild, "rejoin", player2, t, GAME_LOG_WINDOW)
-                    if event then
-                        event.by = event.by or player1
-                        local joiner = guild.members[player2]
-                        if joiner then joiner.invitedBy = joiner.invitedBy or player1 end
-                        if event.hold then event.hold = nil; held[#held + 1] = event end
-                    elseif guild.members[player2] then
-                        GL:SetJoinDate(guild, player2, t, "game")
-                        guild.members[player2].invitedBy = guild.members[player2].invitedBy or player1
-                        GL:AddEvent(guild, "join", { who = player2, by = player1, src = "game" }, t)
-                    end
-                elseif kind == "join" then
-                    local event = GL:FindEvent(guild, "join", player1, t, GAME_LOG_WINDOW)
-                    if not event and guild.members[player1] then
-                        GL:SetJoinDate(guild, player1, t, "game")
-                        GL:AddEvent(guild, "join", { who = player1, src = "game" }, t)
-                    end
-                elseif (kind == "promote" or kind == "demote") and player2 then
-                    local event = GL:FindEvent(guild, kind, player2, t, GAME_LOG_WINDOW)
-                    if event then
-                        event.by = event.by or player1
-                    else
-                        GL:AddEvent(guild, kind, { who = player2, by = player1, to = rank, src = "game" }, t)
-                    end
-                    local member = guild.members[player2]
-                    if member and (not member.promoted or t > member.promoted) then GL:SetPromotedDate(guild, player2, t, "game") end
-                elseif kind == "remove" and player2 then
-                    local event = GL:FindEvent(guild, "leave", player2, t, GAME_LOG_WINDOW)
-                    local former = guild.former[player2]
-                    if former then former.leftKind, former.leftBy = "kick", player1 end
-                    if event then
-                        event.k, event.by = "kick", event.by or player1
-                    elseif not guild.members[player2] then
-                        GL:AddEvent(guild, "kick", { who = player2, by = player1, src = "game" }, t)
-                    end
-                elseif kind == "quit" then
-                    local event = GL:FindEvent(guild, "leave", player1, t, GAME_LOG_WINDOW)
-                    if not event and not guild.members[player1] then
-                        GL:AddEvent(guild, "leave", { who = player1, src = "game" }, t)
-                    end
-                end
-            end
+            entries[#entries + 1] = { kind = kind, p1 = player1, p2 = player2, rank = rank, t = gameLogTime(now, years, months, days, hours) }
         end
     end
-    GL.quiet = wasQuiet
-    for _, event in ipairs(held) do GL:Announce(event, guild) end
-    -- Forget old fingerprints.
-    for key, t in pairs(guild.seen) do
-        if now - t > SEEN_KEEP then guild.seen[key] = nil end
-    end
+    GL:ImportGameLogEntries(guild, entries)
 end
 
 -- Driving it ---------------------------------------------------------------------------------------
@@ -379,19 +636,33 @@ function GL:ProcessRoster()
     local partial = partialReason(guild, total, count, now)
     if partial and not guild.seeded then return end   -- never start from half a roster
     guild.scans = (guild.scans or 0) + 1
+    local prevScan = guild.lastScan
     guild.lastScan = now
     -- A partial roster is shown on the To-do tab (Officers.lua), not announced in chat: a transient one is
     -- common (another addon's tooltip, a server hiccup) and the line read as noise.
     guild.partialScan = partial
     if not partial then guild.lastCount = total end
     local wasQuiet = self.quiet
+    if guild.seeded and guild.repaired ~= 1 and self.RepairLedger then
+        guild.repaired = 1
+        local done, report = pcall(self.RepairLedger, self, guild)
+        local line
+        if done then line = self.RepairLine and self:RepairLine(report)
+        else line = "the ledger repair failed (" .. tostring(report) .. "); the backup from before the repair can be restored with /tabard restore." end
+        if line then self:Print(line) end
+    end
     if not guild.seeded then
         self.quiet = true
         seedGuild(guild, roster, now)
+        guild.repaired = 1   -- nothing old to repair in a ledger that starts now
         self.quiet = wasQuiet
         self:Print(string.format("started keeping records for %s with %d members. Joins, leaves, promotions and level-ups are recorded from now on.", guild.name, total))
     else
-        diffRoster(guild, roster, now, partial ~= nil)
+        -- A read long after the previous one (or with none before it) finds joins and leaves that may be hours
+        -- old. lastScan is saved, so a /reload a moment later is not late and keeps the exact scan times.
+        local late
+        if not prevScan or (now - prevScan) > LATE_GAP then late = prevScan or (now - LATE_FLOOR) end
+        diffRoster(guild, roster, now, partial ~= nil, prevScan, late)
     end
     if self.ApplySelfGroup then pcall(self.ApplySelfGroup, self, guild) end
     if self.LearnFromGRM then pcall(self.LearnFromGRM, self, guild) end
@@ -465,6 +736,35 @@ function GL:RequestScan(force)
     end
 end
 
+-- Live join and leave lines: the game prints them the moment they happen, ahead of the roster and event log.
+function GL:OnSystemLine(text)
+    if not GL.db or type(text) ~= "string" or (issecretvalue and issecretvalue(text)) then return end
+    local joined = joinPattern and string.match(text, joinPattern)
+    if joined then
+        -- A join after a live leave is real even if the roster still looks unchanged: lift the stale-roster guard.
+        local guild = GL:Guild()
+        local former = guild and guild.former[GL:ShortName(joined)]
+        if former and former.leftLive then former.joinLive = GL:Now() end
+        GL:RequestScan(true)   -- the roster read records the join with its level and rank
+        return
+    end
+    local name, by
+    local kind = "leave"
+    if leavePattern then name = string.match(text, leavePattern) end
+    if not name and removePattern then
+        name, by = string.match(text, removePattern)
+        kind = "kick"
+    end
+    if not name then return end
+    local guild = GL:Guild()
+    if not guild or not guild.seeded then return end
+    name = GL:ShortName(name)
+    local member = guild.members[name]
+    if not member then return end   -- not a current member: the game log covers them
+    if by then by = GL:ShortName(by) end
+    recordLeave(guild, name, member, kind, by, GL:Now(), true)
+end
+
 frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 frame:RegisterEvent("GUILD_ROSTER_UPDATE")
@@ -474,6 +774,7 @@ frame:RegisterEvent("CHAT_MSG_SYSTEM")
 frame:SetScript("OnEvent", function(self, event, arg1)
     if event == "CHAT_MSG_SYSTEM" then
         noteInvite(arg1)
+        GL:OnSystemLine(arg1)
     elseif event == "ADDON_LOADED" then
         if arg1 == ADDON_NAME then
             GL:InitDB()
@@ -483,13 +784,18 @@ frame:SetScript("OnEvent", function(self, event, arg1)
         C_Timer.After(5, function() GL:RequestScan(true) end)
     elseif event == "GUILD_ROSTER_UPDATE" then
         if GL.db then
+            -- Put GL.quiet back after the pcall: an error midway would otherwise leave every announcement off.
+            local wasQuiet = GL.quiet
             local ok, err = pcall(GL.ProcessRoster, GL)
+            GL.quiet = wasQuiet
             if not ok then GL:Print("roster scan failed: " .. tostring(err)) end
         end
     elseif event == "GUILD_EVENT_LOG_UPDATE" then
         local guild = GL.db and GL:Guild()
         if guild and guild.seeded then
+            local wasQuiet = GL.quiet   -- as above: the import turns quiet on and an error would leave it on
             local ok, err = pcall(importGameLog, guild)
+            GL.quiet = wasQuiet
             if not ok then GL:Print("event log import failed: " .. tostring(err)) end
             if GL.OnLedgerChanged then GL:OnLedgerChanged(guild) end
         end
