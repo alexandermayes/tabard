@@ -230,7 +230,7 @@ local function addTooltipLines(tooltip, unit)
     if not (unit and UnitIsPlayer(unit)) then return end
     local guild = GL:Guild()
     if not guild then return end
-    local name = GL:ShortName(UnitName(unit))
+    local name = GL:UnitRosterName(unit)
     local member = name and guild.members[name]
     if not member then return end
     if member.joined then
