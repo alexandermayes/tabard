@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.11
+
+- Pick the trial rank by name (asked for on CurseForge). Settings has two new dropdowns, "Trial rank" and "Newcomer rank", listing your guild's ranks; before, the trial rank was a "rank index" number box at the bottom of the thresholds, and the newcomer rank (the one promotions are suggested out of) could not be set at all. Both default to the newest rank, as before. The number box is gone.
+
 ## 1.2.10
 
 - Level-ups in the chat frame are a cheer now, not a record line. A gold star, "DING!", the level in white and a short tail ("Zev (main) hit level 22! onward!"), in a pink nothing else in Tabard uses, so a ding no longer looks like the teal "is online" line above it. Milestones get their own tails (10 "talents unlocked!", 40 "MOUNT TIME!", 60 "MAX LEVEL!"), other levels draw from a small pool. The history and the Overview keep the plain "reached level 22" wording.
