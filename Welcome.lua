@@ -234,10 +234,7 @@ if ActionButtonDown then hooksecurefunc("ActionButtonDown", pumpClick) end
 if ToggleGameMenu then hooksecurefunc("ToggleGameMenu", pumpClick) end
 
 -- Join detection: the system line arrives the moment someone joins, before the roster updates.
-local joinPattern
-if ERR_GUILD_JOIN_S then
-    joinPattern = "^" .. string.gsub(string.gsub(ERR_GUILD_JOIN_S, "[%(%)%.%%%+%-%*%?%[%]%^%$]", "%%%0"), "%%%%s", "(.+)") .. "$"
-end
+local joinPattern = GL:PatternFrom(ERR_GUILD_JOIN_S)
 
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("CHAT_MSG_SYSTEM")
@@ -252,7 +249,7 @@ frame:SetScript("OnEvent", function(_, event, arg1, arg2)
         if not guild then return end
         local former = guild.former and guild.former[name]
         Welcome:OnJoin(guild, name, former and "rejoin" or "join", true)
-        if GL.RequestScan then GL:RequestScan(true) end
+        -- The roster read for this line is requested by Scan.lua's system-line handler (one forced request per line).
     elseif event == "ADDON_ACTION_BLOCKED" then
         if arg1 ~= ADDON_NAME or not (type(arg2) == "string" and string.find(arg2, "SendChatMessage")) then return end
         clickOnly = true

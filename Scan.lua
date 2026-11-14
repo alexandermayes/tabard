@@ -18,10 +18,16 @@ local lastTick                     -- when newcomers were last credited time onl
 -- way to know the inviter when it is you. Keyed by lower-cased name; kept a quarter of an hour.
 local INVITE_KEEP = 900
 local pendingInvites = {}
-local invitePattern
-if ERR_GUILD_INVITE_S then
-    invitePattern = "^" .. string.gsub(string.gsub(ERR_GUILD_INVITE_S, "[%(%)%.%%%+%-%*%?%[%]%^%$]", "%%%0"), "%%%%s", "(.+)") .. "$"
+-- Turns a game string such as "%s has left the guild." into a Lua pattern that captures each %s.
+function GL:PatternFrom(globalString)
+    if type(globalString) ~= "string" then return nil end
+    return "^" .. string.gsub(string.gsub(globalString, "[%(%)%.%%%+%-%*%?%[%]%^%$]", "%%%0"), "%%%%s", "(.+)") .. "$"
 end
+
+local invitePattern = GL:PatternFrom(ERR_GUILD_INVITE_S)
+local joinPattern = GL:PatternFrom(ERR_GUILD_JOIN_S)
+local leavePattern = GL:PatternFrom(ERR_GUILD_LEAVE_S)
+local removePattern = GL:PatternFrom(ERR_GUILD_REMOVE_SS)
 
 local function noteInvite(text)
     if not (invitePattern and type(text) == "string") or (issecretvalue and issecretvalue(text)) then return end
@@ -175,6 +181,18 @@ local function seedGuild(guild, roster, now)
     guild.seeded = now
 end
 
+-- A member is gone: move them to the former list and log the leave or removal. Shared by the roster diff and
+-- the live system-chat lines so both record the same fields.
+local function recordLeave(guild, name, member, kind, by, now)
+    guild.members[name] = nil
+    member.missing = nil
+    member.online = false
+    member.left, member.leftKind = now, kind
+    if kind == "kick" then member.leftBy = by end
+    guild.former[name] = member
+    return GL:AddEvent(guild, kind, { who = name, by = by, level = member.level, from = member.rank, since = member.joined }, now)
+end
+
 -- Compares the saved roster with the live one and records what changed.
 local function diffRoster(guild, roster, now, partial)
     local members = guild.members
@@ -291,12 +309,7 @@ local function diffRoster(guild, roster, now, partial)
         if not roster[name] then
             member.missing = (member.missing or 0) + 1
             if member.missing >= LEAVE_CONFIRM_SCANS then
-                members[name] = nil
-                member.missing = nil
-                member.online = false
-                member.left, member.leftKind = now, "leave"
-                guild.former[name] = member
-                GL:AddEvent(guild, "leave", { who = name, level = member.level, from = member.rank, since = member.joined }, now)
+                recordLeave(guild, name, member, "leave", nil, now)
             end
         end
     end
@@ -577,6 +590,30 @@ function GL:RequestScan(force)
     end
 end
 
+-- Live join and leave lines: the game prints them the moment they happen, ahead of the roster and event log.
+function GL:OnSystemLine(text)
+    if not GL.db or type(text) ~= "string" or (issecretvalue and issecretvalue(text)) then return end
+    if joinPattern and string.match(text, joinPattern) then
+        GL:RequestScan(true)   -- the roster read records the join with its level and rank
+        return
+    end
+    local name, by
+    local kind = "leave"
+    if leavePattern then name = string.match(text, leavePattern) end
+    if not name and removePattern then
+        name, by = string.match(text, removePattern)
+        kind = "kick"
+    end
+    if not name then return end
+    local guild = GL:Guild()
+    if not guild or not guild.seeded then return end
+    name = GL:ShortName(name)
+    local member = guild.members[name]
+    if not member then return end   -- not a current member: the game log covers them
+    if by then by = GL:ShortName(by) end
+    recordLeave(guild, name, member, kind, by, GL:Now())
+end
+
 frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 frame:RegisterEvent("GUILD_ROSTER_UPDATE")
@@ -586,6 +623,7 @@ frame:RegisterEvent("CHAT_MSG_SYSTEM")
 frame:SetScript("OnEvent", function(self, event, arg1)
     if event == "CHAT_MSG_SYSTEM" then
         noteInvite(arg1)
+        GL:OnSystemLine(arg1)
     elseif event == "ADDON_LOADED" then
         if arg1 == ADDON_NAME then
             GL:InitDB()
