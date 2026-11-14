@@ -1452,6 +1452,9 @@ local function logRows()
         if fresh < #rows then tinsert(rows, fresh + 1, { header = "Earlier", guild = guild }) end
         tinsert(rows, 1, { header = "Since your last visit", aside = plural(fresh, "event") .. ", " .. GL:Ago(since), guild = guild })
     end
+    -- Where the history starts and how long it is kept, as a last line that is not clickable.
+    local recording = GL:RecordingSinceText(guild)
+    if recording then rows[#rows + 1] = { header = recording, guild = guild } end
     return rows, total, shown
 end
 
@@ -1593,7 +1596,8 @@ local function buildLogPage()
         local rows, total, shown = logRows()
         page.list.SetRows(rows)
         if total == 0 then
-            showEmpty(page, "Nothing recorded yet. Events are added as members join, leave, level up or change rank while you are online.")
+            local recording = GL:RecordingSinceText()
+            showEmpty(page, "Nothing recorded yet. Events are added as members join, leave, level up or change rank while you are online." .. (recording and ("\n" .. recording) or ""))
         elseif shown == 0 then
             showEmpty(page, "No events match the search and filter.")
         else

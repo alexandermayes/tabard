@@ -359,6 +359,21 @@ function GL:FormatDate(t)
     return date("%d %b %Y", t)
 end
 
+-- "Recording since 10 Nov 2026, keeping 365 days": where the Log's history starts and how long it is kept.
+-- Earliest is the smaller of the ledger's creation and its first event. nil when there is no ledger.
+function GL:RecordingSinceText(guild)
+    guild = guild or self:Guild()
+    if not guild then return nil end
+    local earliest = guild.created
+    local first = guild.events and guild.events[1]
+    if first and type(first.t) == "number" and (type(earliest) ~= "number" or first.t < earliest) then earliest = first.t end
+    if type(earliest) ~= "number" then return nil end
+    local keep = self.settings and self.settings.keepEventDays
+    if keep == nil then keep = 365 end
+    local keeping = keep == 0 and "keeping everything" or ("keeping " .. keep .. " days")
+    return "Recording since " .. self:FormatDate(earliest) .. ", " .. keeping
+end
+
 -- "3 days ago", "2 hours ago", "just now"
 function GL:Ago(t, now)
     if type(t) ~= "number" or t <= 0 then return "" end
