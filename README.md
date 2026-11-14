@@ -36,7 +36,7 @@ usually keeps in their head, and it shares that knowledge between officers autom
 - **Login report**: who joined, left and changed rank while you were away, as chat lines at login.
 - **Bans**: a ban list with reasons that warns you when a banned character, or an alt of one, joins.
 - **Tools**: inactive members to consider removing, promotions due, retention by join week and who
-  recruits people who stay. One-click mass actions or a generated macro.
+  recruits people who stay. Remove and promote run as a generated macro, since the game only allows them from a button you press.
 - **Export**: comma-separated text for members, former members, the log, bans, raid attendance and the
   last raid.
 - **Settings**: chat announcements, login report, welcome whispers, guild chat shoutouts, sharing, trial and newcomer ranks, thresholds, themes,

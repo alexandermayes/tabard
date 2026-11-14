@@ -68,43 +68,12 @@ function GL:AuditRows(guild)
     return list
 end
 
--- Guild actions ---------------------------------------------------------------------------------------------
--- These call the game's own guild functions. They only work from a button click (a hardware event) and when the
--- player's rank allows them; when the client refuses, the macro below is the fallback.
+-- Guild permissions ------------------------------------------------------------------------------------------
+-- The game blocks addons from removing or promoting members directly, so the Tools page hands these to a macro
+-- instead. These only report what the player's rank allows.
 function GL:CanRemove() return CanGuildRemove and CanGuildRemove() or false end
 function GL:CanPromote() return CanGuildPromote and CanGuildPromote() or false end
 function GL:CanDemote() return CanGuildDemote and CanGuildDemote() or false end
-
-local ACTIONS = {
-    kick = function(name) local f = (C_GuildInfo and C_GuildInfo.Uninvite) or GuildUninvite; if f then f(name) return true end end,
-    promote = function(name) local f = (C_GuildInfo and C_GuildInfo.Promote) or GuildPromote; if f then f(name) return true end end,
-    demote = function(name) local f = (C_GuildInfo and C_GuildInfo.Demote) or GuildDemote; if f then f(name) return true end end,
-}
-
-function GL:GuildAction(kind, name)
-    local action = ACTIONS[kind]
-    if not action then return false, "unknown action" end
-    local ok, result = pcall(action, name)
-    if ok and result then return true end
-    return false, ok and "this client has no guild " .. kind .. " function" or tostring(result)
-end
-
--- Runs one action on many names, spaced out so the server accepts them all. onDone(doneCount, failed)
-function GL:GuildActionMany(kind, names, onDone)
-    local index, done, failed = 0, 0, {}
-    local function step()
-        index = index + 1
-        local name = names[index]
-        if not name then
-            if onDone then onDone(done, failed) end
-            return
-        end
-        local ok, err = self:GuildAction(kind, name)
-        if ok then done = done + 1 else failed[#failed + 1] = name .. " (" .. tostring(err) .. ")" end
-        C_Timer.After(0.6, step)
-    end
-    step()
-end
 
 -- Macro ------------------------------------------------------------------------------------------------------
 -- Writes a macro named "Tabard" with one slash command per line, as many names as fit in 255 characters. Returns
