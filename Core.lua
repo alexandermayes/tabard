@@ -32,6 +32,7 @@ GL.prefix = "|TInterface\\AddOns\\Tabard\\logo:14:14:0:0|t |cffffd100Tabard:|r "
 GL.KINDS = {
     join = { order = 1, label = "Joined", color = "ff33dd33" },
     rejoin = { order = 2, label = "Rejoined", color = "ff33dd33" },
+    invite = { order = 2.5, label = "Invited", color = "ff8fcf8f" },
     leave = { order = 3, label = "Left", color = "ffff5555" },
     kick = { order = 4, label = "Removed", color = "ffff5555" },
     promote = { order = 5, label = "Promoted", color = "ffffd100" },
@@ -413,8 +414,23 @@ function GL:AddEvent(guild, kind, fields, t)
     for key, value in pairs(fields) do
         if key ~= "src" then event[key] = value end
     end
-    -- Search from the end: new events are almost always the newest, so this usually appends.
     local list = guild.events
+    -- A join settles an earlier invite for the same person: the latest invite from a week before to two hours
+    -- after the join goes, and its inviter is kept when the join has none.
+    if kind == "join" or kind == "rejoin" then
+        for i = #list, 1, -1 do
+            local other = list[i]
+            if other.t < event.t - 604800 then break end   -- events are in time order
+            if other.k == "invite" and other.who == event.who and other.t <= event.t + 7200 then
+                if not event.by then event.by = other.by end
+                table.remove(list, i)
+                local joiner = guild.members[event.who] or guild.former[event.who]
+                if joiner and event.by then joiner.invitedBy = joiner.invitedBy or event.by end
+                break
+            end
+        end
+    end
+    -- Search from the end: new events are almost always the newest, so this usually appends.
     local pos = #list + 1
     while pos > 1 and list[pos - 1].t > event.t do pos = pos - 1 end
     table.insert(list, pos, event)
@@ -500,6 +516,8 @@ function GL:Describe(event, guild)
         if event.level then text = text .. " at level " .. event.level end
         if by then text = text .. ", invited by " .. by end
         return text .. "."
+    elseif kind == "invite" then
+        return name .. " was invited to the guild" .. (by and (" by " .. by) or "") .. "."
     elseif kind == "leave" or kind == "kick" then
         local text = name .. (kind == "kick" and " was removed from the guild" or " left the guild")
         if by and kind == "kick" then text = text .. " by " .. by end

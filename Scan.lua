@@ -243,10 +243,11 @@ local function diffRoster(guild, roster, now, partial)
         else
             local former = guild.former[name]
             local kind = former and "rejoin" or "join"
+            local leftAt = former and former.left or 0
             member = former or { firstSeen = now }
             guild.former[name] = nil
             updateMember(member, line, now)
-            member.left, member.leftKind = nil, nil
+            member.left, member.leftKind, member.leftBy = nil, nil, nil
             member.joined, member.joinedSource = now, "scan"
             member.promoted, member.promotedSource = nil, nil
             GL:Stamp(member, "joined", now)
@@ -254,9 +255,20 @@ local function diffRoster(guild, roster, now, partial)
             members[name] = member
             -- Who invited them: your own invite is known at once from the system line; anyone else's comes from
             -- the game's event log, so the chat line waits a few seconds for it (level and inviter, like GRM's line).
-            local by = inviterFor(name, now) or member.invitedBy
+            -- The game's log may have been read first and already recorded this joining: reuse that event.
+            -- Only one newer than their departure: an earlier join belongs to the stint they just ended.
+            local event = GL:MatchEvent(guild, "join", name, now, "scan", { ignoreClaim = true })
+            if event and event.t < leftAt then event = nil end
+            local by = inviterFor(name, now) or member.invitedBy or (event and event.by)
             if by then member.invitedBy = member.invitedBy or by end
-            local event = GL:AddEvent(guild, kind, { who = name, level = line.level, by = by, hold = not by or nil }, now)
+            if event then
+                event.k = kind
+                event.level = event.level or line.level
+                event.by = event.by or by
+                event.hold = not by or nil
+            else
+                event = GL:AddEvent(guild, kind, { who = name, level = line.level, by = by, hold = not by or nil }, now)
+            end
             if by then
                 GL:Announce(event, guild)
             else
@@ -381,13 +393,29 @@ function GL:ImportGameLogEntries(guild, entries, opts)
                     self:SetJoinDate(guild, player2, t, "game")
                     guild.members[player2].invitedBy = guild.members[player2].invitedBy or player1
                     create(kind, "join", { who = player2, by = player1 }, t)
+                else
+                    -- Nobody joined (yet): the invite itself is the record. Replaying must not add it twice.
+                    local twin = replay and self:MatchEvent(guild, "invite", player2, t, "game", { ignoreClaim = true, claimed = claimedBy.other })
+                    if twin then
+                        claimedBy.other[twin] = true
+                        twin.g = true
+                        twin.by = twin.by or player1
+                    else
+                        create("other", "invite", { who = player2, by = player1 }, t)
+                    end
                 end
             elseif kind == "join" then
                 local event = match("join", player1, t)
                 if event then
                     claim(kind, event)
-                elseif guild.members[player1] then
-                    self:SetJoinDate(guild, player1, t, "game")
+                else
+                    local member = guild.members[player1]
+                    if member then
+                        self:SetJoinDate(guild, player1, t, "game")
+                    else
+                        local former = guild.former[player1]
+                        if former and not former.joined then former.joined, former.joinedSource = t, "game" end
+                    end
                     create(kind, "join", { who = player1 }, t)
                 end
             elseif (kind == "promote" or kind == "demote") and player2 then
@@ -402,20 +430,22 @@ function GL:ImportGameLogEntries(guild, entries, opts)
                 if member and (not member.promoted or t > member.promoted) then self:SetPromotedDate(guild, player2, t, "game") end
             elseif kind == "remove" and player2 then
                 local event = match("leave", player2, t)
-                local former = guild.former[player2]
-                if former then former.leftKind, former.leftBy = "kick", player1 end
+                if not guild.members[player2] then self:EnsureFormer(guild, player2, t, "kick", player1, rank) end
                 if event then
                     claim(kind, event)
                     event.k, event.by = "kick", event.by or player1
                 elseif not guild.members[player2] then
-                    create(kind, "kick", { who = player2, by = player1 }, t)
+                    local former = guild.former[player2]
+                    create(kind, "kick", { who = player2, by = player1, from = rank, since = former and former.joined }, t)
                 end
             elseif kind == "quit" then
                 local event = match("leave", player1, t)
+                if not guild.members[player1] then self:EnsureFormer(guild, player1, t, "leave", nil, rank) end
                 if event then
                     claim(kind, event)
                 elseif not guild.members[player1] then
-                    create(kind, "leave", { who = player1 }, t)
+                    local former = guild.former[player1]
+                    create(kind, "leave", { who = player1, from = rank, since = former and former.joined }, t)
                 end
             end
         end

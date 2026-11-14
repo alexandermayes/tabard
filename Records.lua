@@ -286,3 +286,31 @@ end
 function GL:IsSafe(member, flag)
     return member and member.safe and member.safe[flag] == true
 end
+
+-- Makes sure someone who is no longer in the guild has a Former record, from what the game log says: when they
+-- left (t), how ("leave" or "kick"), who removed them (by) and their rank. Returns the record, or nil for a
+-- current member. An existing record is only touched when this is the same departure (or it has none yet).
+function GL:EnsureFormer(guild, name, t, leftKind, by, rank)
+    if not (guild and name) or guild.members[name] then return nil end
+    local former = guild.former[name]
+    if not former then
+        former = { name = name, rank = rank, firstSeen = t }
+        guild.former[name] = former
+    end
+    if not former.left or (t and math.abs(former.left - t) <= 7200) then
+        former.left = former.left or t
+        former.leftKind = leftKind
+        if leftKind == "kick" then former.leftBy = by or former.leftBy end
+    end
+    former.rank = former.rank or rank
+    if not former.joined and t then
+        for i = #guild.events, 1, -1 do
+            local event = guild.events[i]
+            if event.who == name and (event.k == "join" or event.k == "rejoin") and event.t <= t then
+                former.joined, former.joinedSource = event.t, event.src == "game" and "game" or "scan"
+                break
+            end
+        end
+    end
+    return former
+end
