@@ -7,6 +7,7 @@ local ADDON_NAME, GL = ...
 
 local SCAN_INTERVAL = 15          -- seconds between roster requests while the game keeps sending updates
 local LEAVE_CONFIRM_SCANS = 2     -- a member must be missing from this many scans in a row before "left" is recorded
+local STALE_AFTER_LEAVE = 120     -- seconds after a live leave line during which a roster still listing the leaver is stale
 local SEEN_WINDOW = 2 * 3600    -- how far apart two readings of the same game-log entry may be (the game only gives the hour)
 local SEEN_KEEP = 60 * 86400      -- how long game-log fingerprints are remembered
 
@@ -183,9 +184,11 @@ end
 
 -- A member is gone: move them to the former list and log the leave or removal. Shared by the roster diff and
 -- the live system-chat lines so both record the same fields.
-local function recordLeave(guild, name, member, kind, by, now)
+local function recordLeave(guild, name, member, kind, by, now, live)
     guild.members[name] = nil
     member.missing = nil
+    -- From a chat line: the roster cache often still lists them for a moment (see the join branch of diffRoster).
+    member.leftLive, member.joinLive = live and now or nil, nil
     member.online = false
     member.left, member.leftKind = now, kind
     if kind == "kick" then member.leftBy = by end
@@ -219,7 +222,14 @@ local function diffRoster(guild, roster, now, partial)
     -- Changes and joins.
     for name, line in pairs(roster) do
         local member = members[name]
-        if member then
+        -- Right after a live leave line the game often sends a roster that still lists the leaver. Skip them
+        -- for a short while, unless a "has joined the guild" line for them came after the leave.
+        local former = not member and guild.former[name]
+        local stale = former and former.leftLive and (now - former.leftLive) <= STALE_AFTER_LEAVE
+            and not (former.joinLive and former.joinLive >= former.leftLive)
+        if stale then
+            -- a former member the roster cache has not caught up on yet: nothing to record
+        elseif member then
             if line.level and member.level and line.level > member.level then
                 GL:AddEvent(guild, "level", { who = name, from = member.level, level = line.level }, now)
                 if GL.Shout then GL.Shout:OnLevel(guild, name, member.level, line.level, line.online) end
@@ -259,13 +269,13 @@ local function diffRoster(guild, roster, now, partial)
             updateMember(member, line, now)
             if noteChanged and GL.settings.autoAlts then GL:DetectAlt(guild, member) end
         else
-            local former = guild.former[name]
             local kind = former and "rejoin" or "join"
             local leftAt = former and former.left or 0
             member = former or { firstSeen = now }
             guild.former[name] = nil
             updateMember(member, line, now)
             member.left, member.leftKind, member.leftBy = nil, nil, nil
+            member.leftLive, member.joinLive = nil, nil
             member.joined, member.joinedSource = now, "scan"
             member.promoted, member.promotedSource = nil, nil
             GL:Stamp(member, "joined", now)
@@ -300,6 +310,13 @@ local function diffRoster(guild, roster, now, partial)
                 end)
             end
             afterJoin(guild, member, kind)
+        end
+    end
+
+    -- The stale-roster guard of a live leave ends after a while, or once a complete roster no longer lists them.
+    for name, former in pairs(guild.former) do
+        if former.leftLive and ((now - former.leftLive) > STALE_AFTER_LEAVE or (not partial and not roster[name])) then
+            former.leftLive, former.joinLive = nil, nil
         end
     end
 
@@ -595,7 +612,12 @@ end
 -- Live join and leave lines: the game prints them the moment they happen, ahead of the roster and event log.
 function GL:OnSystemLine(text)
     if not GL.db or type(text) ~= "string" or (issecretvalue and issecretvalue(text)) then return end
-    if joinPattern and string.match(text, joinPattern) then
+    local joined = joinPattern and string.match(text, joinPattern)
+    if joined then
+        -- A join after a live leave is real even if the roster still looks unchanged: lift the stale-roster guard.
+        local guild = GL:Guild()
+        local former = guild and guild.former[GL:ShortName(joined)]
+        if former and former.leftLive then former.joinLive = GL:Now() end
         GL:RequestScan(true)   -- the roster read records the join with its level and rank
         return
     end
@@ -613,7 +635,7 @@ function GL:OnSystemLine(text)
     local member = guild.members[name]
     if not member then return end   -- not a current member: the game log covers them
     if by then by = GL:ShortName(by) end
-    recordLeave(guild, name, member, kind, by, GL:Now())
+    recordLeave(guild, name, member, kind, by, GL:Now(), true)
 end
 
 frame:RegisterEvent("ADDON_LOADED")

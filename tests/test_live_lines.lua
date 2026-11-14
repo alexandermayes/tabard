@@ -45,3 +45,66 @@ test("join line asks for a scan", function()
     W.fire("CHAT_MSG_SYSTEM", "Newbie Nine has joined the guild.")
     eq(W.rosterRequests, before + 1, "one roster request")
 end)
+-- A guild big enough that one leaver does not make the roster look partial (a >10% shrink does).
+local leaver = { name = "Ooh Woo", rank = "Initiate", rankIndex = 8, level = 20, class = "MAGE" }
+local function others()
+    local list = {}
+    for i = 1, 10 do list[i] = { name = "Filler" .. string.char(96 + i), rank = "Member", rankIndex = 7, level = 30, class = "WARRIOR" } end
+    return list
+end
+local function bigGuild()
+    local GL = W.load()
+    local list = others()
+    list[#list + 1] = leaver
+    W.setRoster(list)
+    W.scan(GL)
+    GL.settings.announce = GL.settings.announce or {}
+    GL.settings.announce.leave = true
+    GL.settings.announce.kick = true
+    W.clearChat()
+    return GL, GL:Guild()
+end
+test("stale roster right after a leave line is not a rejoin", function()
+    local GL, g = bigGuild()
+    GL.settings.announce.rejoin = true
+    GL.settings.announce.join = true
+    W.advance(600)
+    W.fire("CHAT_MSG_SYSTEM", "Ooh Woo has left the guild.")
+    W.advance(2)
+    W.scan(GL)   -- the roster cache still lists the leaver
+    W.runTimers()
+    eq(g.members["Ooh Woo"], nil, "still not a member")
+    ok(g.former["Ooh Woo"], "still former")
+    W.advance(30)
+    W.setRoster(others())
+    W.scan(GL) W.scan(GL) W.runTimers()
+    eq(g.lastCount, 10, "complete roster read")
+    eq(#W.events(g, "leave", "Ooh Woo"), 1, "one leave")
+    eq(#W.events(g, "rejoin", "Ooh Woo"), 0, "no rejoin")
+    eq(count("left the guild"), 1, "one leave line")
+    eq(count("rejoined"), 0, "no rejoin line")
+    eq(g.former["Ooh Woo"].leftLive, nil, "leftLive cleared once the roster drops them")
+end)
+test("leave line then join line then roster: a real rejoin", function()
+    local GL, g = bigGuild()
+    W.advance(600)
+    W.fire("CHAT_MSG_SYSTEM", "Ooh Woo has left the guild.")
+    W.advance(20)
+    W.fire("CHAT_MSG_SYSTEM", "Ooh Woo has joined the guild.")
+    W.advance(2)
+    W.scan(GL) W.runTimers()
+    eq(#W.events(g, "rejoin", "Ooh Woo"), 1, "one rejoin")
+    ok(g.members["Ooh Woo"], "member again")
+    eq(g.members["Ooh Woo"].leftLive, nil, "leftLive cleared")
+end)
+test("stale-roster guard ends after two minutes", function()
+    local GL, g = bigGuild()
+    W.advance(600)
+    W.fire("CHAT_MSG_SYSTEM", "Ooh Woo has left the guild.")
+    W.advance(2)
+    W.scan(GL)
+    eq(#W.events(g, "rejoin", "Ooh Woo"), 0, "guarded")
+    W.advance(200)
+    W.scan(GL)   -- still listed well past the window: they really are back
+    eq(#W.events(g, "rejoin", "Ooh Woo"), 1, "rejoin after the window")
+end)
