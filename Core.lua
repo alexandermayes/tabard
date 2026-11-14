@@ -15,7 +15,7 @@ local function tocVersion()
 end
 GL.version = tocVersion() or "0.0.0"
 -- One line for the "updated to" message at the first login after an update (an addon cannot read CHANGELOG.md).
-GL.whatsNew = "bans and leaves save again, the Log matches the game's guild log with no duplicates, notes are read-only with Edit in roster"
+GL.whatsNew = "bans and leaves save again, the Log follows the game's guild log (its duplicates no longer pile up, offline joins and leaves get the game's time), notes are read-only with Edit in roster"
 
 -- "1.2.10" -> 1002010, so versions compare as numbers; nil when the text is not a version.
 function GL:VersionNumber(text)

@@ -4,16 +4,19 @@
 
 - This is the Never Lucky fork of alexandermayes/tabard (by Zev), installed from https://github.com/Never-Lucky-Group/tabard rather than CurseForge. Update notices and the Usage copy point there too.
 - Bans and leaves save again. "Add a ban" asks for the reason, and the member card's Leave "Set" saves. Prompts chained from another prompt no longer close the new one straight away.
-- The Log matches the game's guild log. Joins, invites, leaves, removals and former members from the game's log are recorded for everyone, including people who have already left, and a leave or removal is recorded the moment the game announces it, not after two roster reads.
-- No duplicate events. The same game-log entry is no longer added again as time passes, a join is not added twice when two officers invited the same person, and a game-log join merges with the roster scan's event for it.
+- The Log follows the game's guild log. Joins, invites, leaves, removals and former members from the game's log are recorded for everyone, including people who have already left. A leave or removal is recorded the moment the game prints its leave or removal line in chat, not after two roster reads, and a roster read that still lists the leaver right after that line no longer logs a false rejoin.
+- Joins and leaves that happened while nobody was online get the game log's time when the log still has them, not the time of the next roster read, and the member's join date is the game's too. A removal seen that way is recorded as a removal, with who removed them.
+- Duplicates from the game's log no longer pile up. The same game-log entry is no longer added again as time passes, a join is not added twice when two officers invited the same person, and a game-log join merges with the roster read's event for it.
 - The Log is in time order, so "since your last visit" and the to-do "back" items see everything, not just the newest part of the list.
-- Ledgers saved by earlier versions are repaired once, on the first roster read after the update: duplicates are removed, events are sorted, and joins, invites and former members the game's log knew about are filled in. Tabard backs the ledger up first, and prints one line saying what changed. If the backup fails, the repair is skipped.
+- Ledgers saved by earlier versions are repaired once, on the first roster read after the update: duplicates are removed (real repeats stay apart, such as a leave and a rejoin, or two promotions to different ranks), events are sorted, and joins, invites and former members the game's log knew about are filled in. Tabard backs the ledger up first, and prints one line saying what changed. If the backup fails, the repair is skipped.
 - The Log shows where its history starts: "Recording since <date>, keeping <N> days" at the bottom, also on an empty Log.
-- The Log's filter resets to the Settings defaults each time you open it. Settings has a new "Hidden on the Log by default" list (it starts with Leveled). Changes made from the Log's Filter menu last only for that visit.
+- The Log's filter resets to the Settings defaults each time you open it. Settings has a new "Hidden on the Log by default" list (it starts with Leveled, or with whatever your old saved filter hid). Changes made from the Log's Filter menu last only for that visit.
 - Tooltips, the newcomer "grouped with a guildie" flag and raid rosters find other players by their full name ("First Last"), which before never found other players on Forever.
 - Guild notes are read-only in the member card, with an "Edit in roster" button that opens the game's guild window. The game does not let addons write notes, so the Save buttons and the "write the join date into notes" option are gone.
 - The Tools page's "Remove all" and "Promote all" buttons are gone, because the game refuses them from an addon. The Macro buttons stay.
 - A shared ban lifted by another officer keeps who lifted it, and a login burst no longer makes Tabard invent character switches for the alt suggestions.
+- Chat announcements come back after a failed read of the game's log. Before, one error there silenced them for the rest of the session.
+- The member card waits for the end of combat the first time it opens, instead of setting off the game's "blocked" popup. Tabard says so in chat and opens it when combat ends.
 - The README's install steps and the update notice are for the fork.
 - For contributors: tests/run.sh runs an offline test harness with a WoW API stub, and tests/repair_report.lua prints what the ledger repair would change in a saved file without writing anything.
 
