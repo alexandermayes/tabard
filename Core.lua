@@ -67,7 +67,6 @@ local DEFAULT_SETTINGS = {
     announce = { join = true, rejoin = true, leave = true, kick = true, promote = true, demote = true, level = true, note = false, onote = false,
         custom = false, rename = true, back = true, alt = false, main = false, ban = true, unban = true, nick = false,
         online = true },  -- online is not an event kind: a line when a guild member logs in, nothing is recorded
-    showFilters = {},        -- kind -> false hides it in the log; absent/true shows it
     inactiveDays = 30,       -- "back after a break" threshold
     kickDays = 60,           -- recommend removing members offline this long
     kickMaxLevel = 0,        -- only recommend removal below this level (0 = any level)
@@ -122,9 +121,46 @@ function GL:InitDB()
     copyDefaults(db.settings, DEFAULT_SETTINGS)
     -- Level-ups in chat became the default in 1.0.0; settings saved before that had it off.
     if not db.levelLinesOn then db.levelLinesOn = true db.settings.announce.level = true end
+    -- Kinds the Log hides on every visit (Settings). Seeded from the old saved filter, else Leveled only.
+    if type(db.settings.logHidden) ~= "table" then
+        local hidden, any = {}, false
+        if type(db.settings.showFilters) == "table" then
+            for kind, shown in pairs(db.settings.showFilters) do if shown == false then hidden[kind] = true any = true end end
+        end
+        if not any then hidden = { level = true } end
+        db.settings.logHidden = hidden
+    end
+    db.settings.showFilters = nil
     db.settings.noteJoinDate = nil   -- removed: the game blocks addons from writing guild notes
     self.db = db
     self.settings = db.settings
+end
+
+-- Log filter: GL.logFilter is kind -> false for hidden kinds, for this visit only.
+function GL:ResetLogFilter()
+    self.logFilter = {}
+    local hidden = self.settings and self.settings.logHidden or {}
+    for kind, isHidden in pairs(hidden) do if isHidden then self.logFilter[kind] = false end end
+end
+
+function GL:LogKindShown(kind)
+    if not self.logFilter then self:ResetLogFilter() end
+    return self.logFilter[kind] ~= false
+end
+
+function GL:SetLogKindShown(kind, shown)
+    if not self.logFilter then self:ResetLogFilter() end
+    if shown then self.logFilter[kind] = nil else self.logFilter[kind] = false end
+end
+
+-- Shows only the given kinds (kind -> true); an empty or nil set shows everything.
+function GL:SetLogFilterOnly(kinds)
+    self.logFilter = {}
+    if not kinds then return end
+    local any = false
+    for _, kind in ipairs(self.KIND_ORDER) do if kinds[kind] then any = true end end
+    if not any then return end
+    for _, kind in ipairs(self.KIND_ORDER) do if not kinds[kind] then self.logFilter[kind] = false end end
 end
 
 function GL:GuildKey()

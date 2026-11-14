@@ -1405,23 +1405,16 @@ local function scopeLabel(scope)
     return range and ("Level " .. range) or "Everyone"
 end
 
--- Shows only the given kinds in the log (nil = everything), then opens it.
+-- Shows only the given kinds in the log (nil = everything), then opens it. showPage's third argument keeps
+-- this filter instead of resetting to the Settings defaults.
 local function goLog(kinds)
-    GL.settings.showFilters = {}
-    if kinds then
-        local any = false
-        for _, kind in ipairs(GL.KIND_ORDER) do
-            if kinds[kind] then any = true else GL.settings.showFilters[kind] = false end
-        end
-        if not any then GL.settings.showFilters = {} end   -- an empty set would hide everything
-    end
-    showPage("log")
+    GL:SetLogFilterOnly(kinds)
+    showPage("log", nil, true)
 end
 
 -- Log page ---------------------------------------------------------------------------------------------
 local function kindShown(kind)
-    local shown = GL.settings.showFilters[kind]
-    return shown == nil or shown == true
+    return GL:LogKindShown(kind)
 end
 
 local function hiddenKinds()
@@ -1440,7 +1433,7 @@ end
 local function logRows()
     local guild = GL:Guild()
     if not guild then return {}, 0, 0 end
-    if hiddenKinds() >= #GL.KIND_ORDER then GL.settings.showFilters = {} end   -- a filter that hides everything is no filter
+    if hiddenKinds() >= #GL.KIND_ORDER then GL.logFilter = {} end   -- a filter that hides everything is no filter
     local rows, total = {}, #guild.events
     local needle = string.lower(logSearch)
     for i = #guild.events, 1, -1 do
@@ -1491,10 +1484,10 @@ local function buildLogPage()
     local items = {}
     for _, kind in ipairs(GL.KIND_ORDER) do
         items[#items + 1] = { text = GL.KINDS[kind].label, isChecked = function() return kindShown(kind) end,
-            toggle = function() GL.settings.showFilters[kind] = not kindShown(kind) GL:RefreshWindow() end }
+            toggle = function() GL:SetLogKindShown(kind, not kindShown(kind)) GL:RefreshWindow() end }
     end
     items[#items + 1] = { separator = true }
-    items[#items + 1] = { text = "Show everything", action = function() GL.settings.showFilters = {} GL:RefreshWindow() end }
+    items[#items + 1] = { text = "Show everything", action = function() GL:SetLogFilterOnly(nil) GL:RefreshWindow() end }
     items[#items + 1] = { text = "Only joins and leaves", action = function() goLog({ join = true, rejoin = true, leave = true, kick = true }) end }
     items[#items + 1] = { text = "Only rank changes", action = function() goLog({ promote = true, demote = true, rank = true }) end }
     items[#items + 1] = { text = "Only officer edits", action = function() goLog({ note = true, onote = true, custom = true, alt = true, main = true, ban = true, unban = true, joindate = true, promodate = true, birthday = true }) end }
@@ -3369,6 +3362,18 @@ local function buildSettingsPage()
     page.login:SetPoint("LEFT", page.loginLabel, "RIGHT", 8, 0)
     explain(page.login, "A few seconds after you log in or reload, once the roster has been read. The card lists what changed while you were away and how many to-do items are open, with a button for the whole window; it only shows when there is something on it.")
     y = y - 30
+    page.logHiddenLabel = page.behaviourBox.body:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    page.logHiddenLabel:SetPoint("TOPLEFT", page.behaviourBox.body, "TOPLEFT", 4, y - 4)
+    page.logHiddenLabel:SetText("Hidden on the Log by default:")
+    local logHiddenItems = {}
+    for _, kind in ipairs(GL.KIND_ORDER) do
+        logHiddenItems[#logHiddenItems + 1] = { text = GL.KINDS[kind].label, isChecked = function() return GL.settings.logHidden[kind] == true end,
+            toggle = function() GL.settings.logHidden[kind] = (not GL.settings.logHidden[kind]) or nil GL:RefreshWindow() end }
+    end
+    page.logHidden = createFilter(page.behaviourBox.body, "Choose kinds", logHiddenItems, 200)
+    page.logHidden:SetPoint("LEFT", page.logHiddenLabel, "RIGHT", 8, 0)
+    explain(page.logHidden, "Event kinds the Log hides every time you open it. The Log's own Filter menu changes only the visit you are on; the next visit starts from this list again.")
+    y = y - 30
     page.artLabel = page.behaviourBox.body:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     page.artLabel:SetPoint("TOPLEFT", page.behaviourBox.body, "TOPLEFT", 4, y - 4)
     page.artLabel:SetText("Background art:")
@@ -3567,7 +3572,7 @@ local function buildSettingsPage()
         local behaviourRows = {}
         for _, option in ipairs(options) do behaviourRows[#behaviourRows + 1] = { w = page.options[option.key], kind = C, x = -4, gap = 4 } end
         behaviourRows[#behaviourRows + 1] = { w = page.minimap, kind = C, x = -4, gap = 8 }
-        for _, label in ipairs({ page.loginLabel, page.artLabel, page.brightnessLabel, page.trialRankLabel, page.promoteRankLabel }) do behaviourRows[#behaviourRows + 1] = { w = label, kind = P, x = 4, gap = 8 } end
+        for _, label in ipairs({ page.loginLabel, page.logHiddenLabel, page.artLabel, page.brightnessLabel, page.trialRankLabel, page.promoteRankLabel }) do behaviourRows[#behaviourRows + 1] = { w = label, kind = P, x = 4, gap = 8 } end
         local behaviourUsed = flow(page.behaviourBox.body, behaviourRows)
         local thresholdRows = {}
         for _, item in ipairs(numbers) do
@@ -3603,6 +3608,9 @@ local function buildSettingsPage()
             end
         end
         page.login:SetLabel(LOGIN_LABELS[GL.settings.openOnLogin or LOGIN_DEFAULT] or LOGIN_LABELS[LOGIN_DEFAULT])
+        local hiddenCount = 0
+        for _, kind in ipairs(GL.KIND_ORDER) do if GL.settings.logHidden[kind] then hiddenCount = hiddenCount + 1 end end
+        page.logHidden:SetLabel(hiddenCount == 0 and "Nothing hidden" or (hiddenCount .. " hidden"))
         page.art:SetLabel(THEME_LABELS[chosenTheme()] or THEME_LABELS[DEFAULT_THEME])
         page.brightness:SetLabel(WASH_LABELS[GL.settings.artBrightness or "normal"] or WASH_LABELS.normal)
         for _, button in ipairs(page.rankPickers) do fillRankItems(button, button.key) end
@@ -4197,8 +4205,12 @@ local TAB_KEYS = {}
 for _, pair in ipairs(TAB_ORDER) do TAB_KEYS[pair[1]] = true end
 
 -- opened: the window was just opened, so the page counts as viewed even when it was already the current one
-showPage = function(key, opened)
+-- keepFilter: the Log was pre-filtered by goLog, so its kind filter is not reset. Otherwise entering the Log
+-- (from another page, or when the window opens onto it) resets the filter to Settings' hidden-by-default list;
+-- a redraw of the Log already showing does not.
+showPage = function(key, opened, keepFilter)
     if not pages[key] then return end
+    if key == "log" and not keepFilter and (opened or currentPage ~= "log") then GL:ResetLogFilter() end
     if GL.Usage and (opened or key ~= currentPage) then pcall(GL.Usage.Page, GL.Usage, key) end
     currentPage = key
     for name, page in pairs(pages) do
