@@ -166,7 +166,7 @@ function GL:RepairLedger(guild)
     guild.former = guild.former or {}
     guild.members = guild.members or {}
     guild.repaired = 1   -- set first: the backup copy carries it (so a restore is not repaired again) and a failure never repeats
-    local backedUp, backupErr = pcall(self.Backup, self, guild, "before 1.3.0 repair")
+    local backedUp, backupErr = pcall(self.Backup, self, guild, "before ledger repair")
     if not backedUp or backupErr == false then
         report.skipped = true
         return report
@@ -188,24 +188,50 @@ function GL:RepairLedger(guild)
         end
         -- Dedupe: a game event merges into its partner (one-to-one), keeping the scan one or the earlier game one.
         local done, removed = {}, {}
+        local MEMBERSHIP = { join = true, rejoin = true, leave = true, kick = true }
+        local RANKS = { promote = true, demote = true }
+        -- Two events are not one when an event of the same family about that person lies between them
+        -- (a promotion between two promotions, a leave between a join and a rejoin).
         local function blocked(a, b)
-            if a.k ~= "promote" and a.k ~= "demote" then return false end
+            local family = RANKS[a.k] and RANKS or MEMBERSHIP[a.k] and MEMBERSHIP
+            if not family then return false end
             local lo, hi = math.min(a.t, b.t), math.max(a.t, b.t)
             for _, other in ipairs(guild.events) do
-                if other ~= a and other ~= b and other.who == a.who and (other.k == "promote" or other.k == "demote")
+                if other ~= a and other ~= b and other.who == a.who and family[other.k]
                     and other.t > lo and other.t < hi then return true end
+            end
+            return false
+        end
+        -- Nor when they disagree on who did it or the ranks, where both say.
+        local function differ(a, b)
+            for _, field in ipairs({ "by", "from", "to" }) do
+                if a[field] ~= nil and b[field] ~= nil and a[field] ~= b[field] then return true end
             end
             return false
         end
         for _, e in ipairs(guild.events) do
             if e.src == "game" and not done[e] then
-                local partner = self:MatchEvent(guild, e.k, e.who, e.t, "game", { ignoreClaim = true, exclude = e, claimed = done })
+                -- The nearest partner that agrees with it; one that disagrees is skipped, not merged.
+                local skip = setmetatable({}, { __index = done })
+                local partner
+                repeat
+                    partner = self:MatchEvent(guild, e.k, e.who, e.t, "game", { ignoreClaim = true, exclude = e, claimed = skip })
+                    if partner and differ(e, partner) then skip[partner] = true else break end
+                until false
                 if partner then
                     if not blocked(e, partner) then
                         local keep, drop = partner, e
                         if partner.src == "game" and e.t < partner.t then keep, drop = e, partner end
                         for k, v in pairs(drop) do
                             if keep[k] == nil then keep[k] = v end
+                        end
+                        -- A removal read as a plain leave on one side is a removal.
+                        if drop.k == "kick" and keep.k == "leave" then
+                            keep.k = "kick"
+                            local former = guild.former[keep.who]
+                            if former and (not former.left or math.abs(former.left - keep.t) <= 7200 or math.abs(former.left - drop.t) <= 7200) then
+                                former.leftKind, former.leftBy = "kick", keep.by or former.leftBy
+                            end
                         end
                         keep.g = true
                         done[keep], done[drop] = true, true
