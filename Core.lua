@@ -15,7 +15,7 @@ local function tocVersion()
 end
 GL.version = tocVersion() or "0.0.0"
 -- One line for the "updated to" message at the first login after an update (an addon cannot read CHANGELOG.md).
-GL.whatsNew = "a DING! line for level-ups, a secure Invite button, smarter alt suggestions"
+GL.whatsNew = "pick the trial and newcomer ranks by name in Settings, a DING! line for level-ups, a secure Invite button"
 
 -- "1.2.10" -> 1002010, so versions compare as numbers; nil when the text is not a version.
 function GL:VersionNumber(text)

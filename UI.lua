@@ -3357,7 +3357,7 @@ local function buildSettingsPage()
         { key = "inviteBar", label = "Offer an Invite button when someone outside the guild whispers you (your click sends it)", default = true },
         { key = "raidTracking", label = "Track raid attendance, bench and loot while you are in a raid group", default = true },
     }
-    local behaviourHeight = 34 + 13 * 30 + 6
+    local behaviourHeight = 34 + 15 * 30 + 6
     page.behaviourBox = section(content, "Sharing and tooltips", rightX, -PAD, rightWidth, behaviourHeight)
     page.options = {}
     page.optionDefaults = {}
@@ -3414,6 +3414,43 @@ local function buildSettingsPage()
     page.noteDate = createFilter(page.behaviourBox.body, NOTE_DATE_LABELS.none, noteItems, 200)
     page.noteDate:SetPoint("LEFT", page.noteDateLabel, "RIGHT", 8, 0)
     explain(page.noteDate, "When someone joins and that note is empty, Tabard writes \"Joined 07 Nov 2026\" into it, the way Guild Roster Manager does. Needs note-editing rights.")
+    -- Rank pickers: the trial rank and the newcomer rank by name, not by index. Both fall back to the newest
+    -- rank (the highest index) when nothing is picked. The menu is rebuilt from the guild's rank list on every
+    -- refresh (fillRankItems), so a renamed or added rank shows up.
+    local RANK_DEFAULT = "Newest rank"
+    local function fillRankItems(button, key)
+        local guild = GL:Guild()
+        local items = button.items
+        for i = #items, 1, -1 do items[i] = nil end
+        items[#items + 1] = { text = RANK_DEFAULT .. " (default)", isChecked = function() return GL.settings[key] == nil end,
+            toggle = function() GL.settings[key] = nil GL:RefreshWindow() end }
+        local indexes = {}
+        if guild and guild.ranks then for index in pairs(guild.ranks) do indexes[#indexes + 1] = index end end
+        table.sort(indexes)
+        for _, index in ipairs(indexes) do
+            items[#items + 1] = { text = tostring(guild.ranks[index]), isChecked = function() return GL.settings[key] == index end,
+                toggle = function() GL.settings[key] = index GL:RefreshWindow() end }
+        end
+        local chosen = GL.settings[key]
+        local name = chosen and guild and guild.ranks and guild.ranks[chosen]
+        button:SetLabel(name and tostring(name) or RANK_DEFAULT)
+    end
+    local function rankPicker(key, labelText, help)
+        y = y - 30
+        local label = page.behaviourBox.body:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        label:SetPoint("TOPLEFT", page.behaviourBox.body, "TOPLEFT", 4, y - 4)
+        label:SetText(labelText)
+        local items = {}
+        local button = createFilter(page.behaviourBox.body, RANK_DEFAULT, items, 200)
+        button:SetPoint("LEFT", label, "RIGHT", 8, 0)
+        button.items, button.key, button.label = items, key, label
+        explain(button, help)
+        return button
+    end
+    page.trialRank = rankPicker("trialRank", "Trial rank:", "The rank new members sit in while on trial. Members in it longer than the trial days get a \"Trial review due\" item on the To-do tab, and officers can vote on their card. Newest rank means the last rank in your guild's list, which is where most guilds put recruits.")
+    page.promoteRank = rankPicker("promoteFromRank", "Newcomer rank:", "The rank Tabard suggests promotions out of: members in it longer than the promotion days get a \"Promotion due\" item on the To-do tab. Usually the same as the trial rank.")
+    page.rankPickers = { page.trialRank, page.promoteRank }
+    page.trialRankLabel, page.promoteRankLabel = page.trialRank.label, page.promoteRank.label
 
     -- Right, middle: thresholds.
     local numbers = {
@@ -3423,12 +3460,11 @@ local function buildSettingsPage()
         { key = "promoteDays", label = "days in the newest rank before suggesting promotion" },
         { key = "syncMinRank", label = "lowest rank index whose shared data is accepted (0 = guild leader)" },
         { key = "trialDays", label = "days in the trial rank before a review is due", default = 14 },
-        { key = "trialRank", label = "rank index that counts as the trial rank (empty = the newest rank)", allowNil = true },
         { key = "strikeDays", label = "days a strike counts (0 = forever)", default = 90 },
         { key = "keepEventDays", label = "days of history to keep; older events are tidied away (0 = keep all)", default = 365 },
     }
     local thresholdsTop = -PAD - behaviourHeight - GAP
-    local thresholdsHeight = 34 + 9 * 26 + 6
+    local thresholdsHeight = 34 + 8 * 26 + 6
     page.thresholdBox = section(content, "Thresholds", rightX, thresholdsTop, rightWidth, thresholdsHeight)
     page.numbers = {}
     y = -2
@@ -3558,7 +3594,7 @@ local function buildSettingsPage()
         local behaviourRows = {}
         for _, option in ipairs(options) do behaviourRows[#behaviourRows + 1] = { w = page.options[option.key], kind = C, x = -4, gap = 4 } end
         behaviourRows[#behaviourRows + 1] = { w = page.minimap, kind = C, x = -4, gap = 8 }
-        for _, label in ipairs({ page.loginLabel, page.artLabel, page.brightnessLabel, page.noteDateLabel }) do behaviourRows[#behaviourRows + 1] = { w = label, kind = P, x = 4, gap = 8 } end
+        for _, label in ipairs({ page.loginLabel, page.artLabel, page.brightnessLabel, page.noteDateLabel, page.trialRankLabel, page.promoteRankLabel }) do behaviourRows[#behaviourRows + 1] = { w = label, kind = P, x = 4, gap = 8 } end
         local behaviourUsed = flow(page.behaviourBox.body, behaviourRows)
         local thresholdRows = {}
         for _, item in ipairs(numbers) do
@@ -3597,6 +3633,7 @@ local function buildSettingsPage()
         page.art:SetLabel(THEME_LABELS[chosenTheme()] or THEME_LABELS[DEFAULT_THEME])
         page.brightness:SetLabel(WASH_LABELS[GL.settings.artBrightness or "normal"] or WASH_LABELS.normal)
         page.noteDate:SetLabel(NOTE_DATE_LABELS[GL.settings.noteJoinDate or "none"] or NOTE_DATE_LABELS.none)
+        for _, button in ipairs(page.rankPickers) do fillRankItems(button, button.key) end
         local okInfo, backupTime, backupLabel = pcall(function() if GL.BackupInfo then return GL:BackupInfo() end end)
         local okSize, size = pcall(function() if GL.DBSizeText then return GL:DBSizeText() end end)
         page.backupInfo:SetText((okInfo and backupTime and ("Backup from " .. GL:FormatTime(backupTime) .. " (" .. tostring(backupLabel) .. ")") or "No backup yet")

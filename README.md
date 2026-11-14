@@ -39,7 +39,7 @@ usually keeps in their head, and it shares that knowledge between officers autom
   recruits people who stay. One-click mass actions or a generated macro.
 - **Export**: comma-separated text for members, former members, the log, bans, raid attendance and the
   last raid.
-- **Settings**: chat announcements, login report, welcome whispers, guild chat shoutouts, sharing, thresholds, themes,
+- **Settings**: chat announcements, login report, welcome whispers, guild chat shoutouts, sharing, trial and newcomer ranks, thresholds, themes,
   backups and a Guild Roster Manager import. Every option is in the window.
 
 ### Optional extras (off until you turn them on)
