@@ -2171,25 +2171,13 @@ local function buildToolsPage()
             onClick)
     end
 
-    local function runAll(kind, rows, verb)
-        local names = {}
-        for _, row in ipairs(rows) do names[#names + 1] = row.member.name end
-        if #names == 0 then return end
-        confirm(string.format("%s %d members now? This uses your guild permissions and cannot be undone.", verb, #names), function()
-            GL:GuildActionMany(kind, names, function(done, failed)
-                GL:Print(string.format("%s %d of %d.", verb, done, #names) .. (#failed > 0 and (" Could not: " .. table.concat(failed, ", ")) or ""))
-                GL:RequestScan(true)
-            end)
-        end)
-    end
-
     local function macroFor(kind, rows)
         local names = {}
         for _, row in ipairs(rows) do names[#names + 1] = row.member.name end
         if #names == 0 then return end
         local body, used, left, err = GL:BuildMacro(kind, names)
         if not body then GL:Print("could not write the macro" .. (err and (": " .. err) or ".")) return end
-        GL:Print(string.format("macro \"Ledger\" written with %d names%s. Drag it from the macro window (/macro) to a bar and press it.", #used, #left > 0 and ("; " .. #left .. " did not fit and will go in the next one") or ""))
+        GL:Print(string.format("macro \"Tabard\" written with %d names%s. Drag it from the macro window (/macro) to a bar and press it.", #used, #left > 0 and ("; " .. #left .. " did not fit and will go in the next one") or ""))
     end
 
     local function nameLine(data)
@@ -2218,12 +2206,9 @@ local function buildToolsPage()
         if value and value >= 1 then GL.settings.kickDays = math.floor(value) end
         GL:RefreshWindow()
     end)
-    inactive.remove = makeButton(inactive, "Remove all", 100, function() runAll("kick", inactive.rows or {}, "Removed") end)
-    inactive.remove:SetPoint("BOTTOMRIGHT", inactive.body, "BOTTOMRIGHT", 0, -1)
-    explain(inactive.remove, function(self) if not self:IsEnabled() then return GL:CanRemove() and "Nobody to remove." or "Your guild rank cannot remove members. Use the macro instead." end return "Removes everyone in this list, one every half second." end)
     inactive.macro = makeButton(inactive, "Macro", 70, function() macroFor("kick", inactive.rows or {}) end)
-    inactive.macro:SetPoint("RIGHT", inactive.remove, "LEFT", -4, 0)
-    explain(inactive.macro, "Writes a macro named \"Tabard\" with one /gremove line per name, for when the game refuses addon actions.")
+    inactive.macro:SetPoint("BOTTOMRIGHT", inactive.body, "BOTTOMRIGHT", 0, -1)
+    explain(inactive.macro, "Writes a macro named \"Tabard\" with one /gremove line per name. Drag it to a bar and press it to remove them; the game only lets you do this from a button you press.")
 
     -- Top right: promotions
     local promote = quad(2, 1, "Promotions due")
@@ -2246,12 +2231,9 @@ local function buildToolsPage()
         if value and value >= 1 then GL.settings.promoteDays = math.floor(value) end
         GL:RefreshWindow()
     end)
-    promote.run = makeButton(promote, "Promote all", 100, function() runAll("promote", promote.rows or {}, "Promoted") end)
-    promote.run:SetPoint("BOTTOMRIGHT", promote.body, "BOTTOMRIGHT", 0, -1)
-    explain(promote.run, function(self) if not self:IsEnabled() then return GL:CanPromote() and "Nobody to promote." or "Your guild rank cannot promote members. Use the macro instead." end return "Promotes everyone in this list one rank, one every half second." end)
     promote.macro = makeButton(promote, "Macro", 70, function() macroFor("promote", promote.rows or {}) end)
-    promote.macro:SetPoint("RIGHT", promote.run, "LEFT", -4, 0)
-    explain(promote.macro, "Writes a macro named \"Tabard\" with one /gpromote line per name, for when the game refuses addon actions.")
+    promote.macro:SetPoint("BOTTOMRIGHT", promote.body, "BOTTOMRIGHT", 0, -1)
+    explain(promote.macro, "Writes a macro named \"Tabard\" with one /gpromote line per name. Drag it to a bar and press it to promote them; the game only lets you do this from a button you press.")
 
     -- Bottom left: retention by join week
     local cohorts = quad(1, 2, "Retention by join week")
@@ -2304,7 +2286,6 @@ local function buildToolsPage()
         inactive.help:SetText(string.format("Offline for %d+ days, with every alt in their group also away. Right-click a name to leave them alone.", GL.settings.kickDays or 60))
         if not inactive.days:HasFocus() then inactive.days:SetText(tostring(GL.settings.kickDays or 60)) end
         inactive.empty:SetText(#inactive.rows == 0 and "Nobody has been away that long." or "")
-        inactive.remove:SetEnabled(GL:CanRemove() and #inactive.rows > 0)
         inactive.macro:SetEnabled(#inactive.rows > 0)
 
         promote.rows = GL:PromoteCandidates(guild, now)
@@ -2314,7 +2295,6 @@ local function buildToolsPage()
         promote.help:SetText(string.format("In \"%s\" for %d+ days. Right-click a name to leave them alone.", rank and guild.ranks[rank] or "the newest rank", GL.settings.promoteDays or 14))
         if not promote.days:HasFocus() then promote.days:SetText(tostring(GL.settings.promoteDays or 14)) end
         promote.empty:SetText(#promote.rows == 0 and "Nobody is waiting on a promotion." or "")
-        promote.run:SetEnabled(GL:CanPromote() and #promote.rows > 0)
         promote.macro:SetEnabled(#promote.rows > 0)
 
         local cohortRows = {}
