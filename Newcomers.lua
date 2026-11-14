@@ -124,9 +124,9 @@ function GL:NoteGroup(guild, now)
     local prefix, count = "party", GetNumSubgroupMembers and GetNumSubgroupMembers() or 0
     if IsInRaid and IsInRaid() then prefix, count = "raid", GetNumGroupMembers and GetNumGroupMembers() or 0 end
     for i = 1, count do
-        local name = UnitName and UnitName(prefix .. i)
-        if type(name) == "string" and self:IsUsable(name) then
-            local member = guild.members[self:ShortName(name)]
+        local name = self:UnitRosterName(prefix .. i)
+        if name then
+            local member = guild.members[name]
             if member and self:IsNewcomer(member, now) then flag(self, guild, member, "grouped", now, self:PlayerName()) end
         end
     end

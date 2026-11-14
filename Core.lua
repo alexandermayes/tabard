@@ -175,21 +175,27 @@ function GL:ShortName(name)
     return name
 end
 
--- The player's name as the guild roster writes it. On Forever, UnitName("player") returns the first name and the
--- surname as two values ("Zev", "Zev") while the roster says "Zev Zev"; other clients return name and realm.
-function GL:PlayerName()
-    local full = GetUnitName and GetUnitName("player", false)
-    if type(full) == "string" and string.find(full, " ", 1, true) and not (issecretvalue and issecretvalue(full)) then
+-- A unit's name as the guild roster writes it ("Ooh Woo"), or nil when the name is missing or secret. On Forever,
+-- UnitName returns the first name and the surname as two values ("Ooh", "Woo") while the roster says "Ooh Woo";
+-- other clients return name and realm, or a full name with a realm, which the realm part is stripped from.
+function GL:UnitRosterName(unit)
+    local full = GetUnitName and GetUnitName(unit, false)
+    if type(full) == "string" and self:IsUsable(full) and string.find(full, " ", 1, true) then
         return self:ShortName(full)
     end
-    local name, second = UnitName("player")
-    if type(name) ~= "string" then return "?" end
+    local name, second = UnitName(unit)
+    if not (self:IsUsable(name) and type(name) == "string") then return nil end
     name = self:ShortName(name)
-    if type(second) == "string" and second ~= "" and not string.find(second, "-", 1, true) then
+    if self:IsUsable(second) and type(second) == "string" and second ~= "" and not string.find(second, "-", 1, true) then
         local realm = string.gsub(GetRealmName() or "", "%s+", "")
         if string.gsub(second, "%s+", "") ~= realm then name = name .. " " .. second end
     end
     return name
+end
+
+-- The player's name as the guild roster writes it ("Zev Zev"), or "?" when the client gives none.
+function GL:PlayerName()
+    return self:UnitRosterName("player") or "?"
 end
 
 -- Just the first name ("Zev"), for lines written in the first person.
