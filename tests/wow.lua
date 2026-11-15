@@ -172,6 +172,18 @@ function W.runTimers()
     end
 end
 
+-- Runs the OnUpdate script of every shown stub frame (the client skips hidden ones) for `seconds` of game time,
+-- in `step`-second frames (default 0.25).
+function W.tick(seconds, step)
+    step = step or 0.25
+    for _ = 1, math.ceil(seconds / step) do
+        for _, f in ipairs(frames) do
+            local fn = f._scripts.OnUpdate
+            if fn and f._shown then fn(f, step) end
+        end
+    end
+end
+
 -- Dispatches an event to every stub frame registered for it.
 function W.fire(event, ...)
     local list = {}

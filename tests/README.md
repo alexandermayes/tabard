@@ -19,4 +19,4 @@ tests/run.sh        # every tests/test_*.lua; prints failures and "N passed, M f
 tests/syntax.sh     # luac5.1 -p on every .lua file in the repo
 ```
 
-Tests use `test(name, fn)`, `eq(actual, expected, label)` and `ok(cond, label)`, and `local W = require("wow")` for the stub (`W.load`, `W.setRoster`, `W.setGameLog`, `W.scan`, `W.advance`, `W.fire`, `W.runTimers`, `W.chat`, `W.events`, ...). See `tests/wow.lua`.
+Tests use `test(name, fn)`, `eq(actual, expected, label)` and `ok(cond, label)`, and `local W = require("wow")` for the stub (`W.load`, `W.setRoster`, `W.setGameLog`, `W.scan`, `W.advance`, `W.fire`, `W.runTimers`, `W.tick` (runs shown frames' OnUpdate scripts for N seconds of game time), `W.chat`, `W.events`, ...). See `tests/wow.lua`.
