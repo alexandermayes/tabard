@@ -56,7 +56,8 @@ local function groupNames()
         for i = 1, count do
             local name, _, _, _, _, class, _, online = GetRaidRosterInfo(i)
             if GL:IsUsable(name) and type(name) == "string" then
-                names[#names + 1] = { name = GL:ShortName(name), class = GL:IsUsable(class) and class or nil, online = online }
+                local full = GL:UnitRosterName("raid" .. i) or GL:ShortName(name)
+                names[#names + 1] = { name = full, class = GL:IsUsable(class) and class or nil, online = online }
             end
         end
     end

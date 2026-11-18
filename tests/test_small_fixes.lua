@@ -1,0 +1,28 @@
+local W = require("wow")
+
+test("lifted ban keeps who lifted it", function()
+    local GL = W.load()
+    W.setRoster({ { name = "Ann Officer", rank = "Officer", rankIndex = 1, level = 60, class = "PALADIN" } })
+    W.scan(GL)
+    local g = GL:Guild()
+    W.fire("CHAT_MSG_ADDON", "Tabard", table.concat({ "B", "Bad Guy", "100", "Ann Officer", "rude", "", "200", "300", "Ann Officer" }, "\031"), "GUILD", "Ann Officer")
+    local b = g.bans["Bad Guy"]
+    ok(b ~= nil, "ban exists")
+    eq(b.lifted, 300, "lifted")
+    eq(b.liftedBy, "Ann Officer", "liftedBy")
+end)
+
+test("first read makes no handoffs", function()
+    local GL = W.load()
+    W.setRoster({ { name = "Ooh Woo", rank = "Member", rankIndex = 3, level = 20, class = "MAGE", online = false } })
+    W.scan(GL)
+    local db = TabardDB
+    GL = W.load({ db = db })
+    W.setRoster({ { name = "Ooh Woo", rank = "Member", rankIndex = 3, level = 20, class = "MAGE", online = true } })
+    W.scan(GL)
+    local g = GL:Guild()
+    eq(#(g.handoffs or {}), 0, "no handoffs on first read")
+    W.setRoster({ { name = "Ooh Woo", rank = "Member", rankIndex = 3, level = 20, class = "MAGE", online = false } })
+    W.scan(GL)
+    eq(#(g.handoffs or {}), 1, "later read records a handoff")
+end)

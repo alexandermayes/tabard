@@ -866,9 +866,13 @@ local function definePopups()
     }
 end
 
+-- Shows the text prompt on the next frame, so a prompt opened from another prompt's Save or Enter
+-- does not reuse the dialog that is still hiding itself (which would then be hidden by the click).
 local function askText(prompt, default, onAccept)
     if not StaticPopup_Show then return end
-    StaticPopup_Show("TABARDUI_TEXT", prompt, nil, { prompt = prompt, default = default, onAccept = onAccept })
+    C_Timer.After(0, function()
+        StaticPopup_Show("TABARDUI_TEXT", prompt, nil, { prompt = prompt, default = default, onAccept = onAccept })
+    end)
 end
 
 local function confirm(prompt, onAccept)
@@ -4130,9 +4134,28 @@ local function buildCard()
     end
 end
 
+-- The card's buttons are secure (they whisper, invite and remove), and the game blocks making them in combat
+-- with its "blocked" popup. Asked for in combat before it exists, the card opens once combat ends instead.
+local cardAfterCombat, combatWatch
+local function openAfterCombat(member)
+    if not cardAfterCombat then GL:Print("the member card opens after combat.") end
+    cardAfterCombat = member   -- the latest one asked for
+    if not combatWatch then
+        combatWatch = CreateFrame("Frame")
+        combatWatch:SetScript("OnEvent", function(self)
+            self:UnregisterEvent("PLAYER_REGEN_ENABLED")
+            local waiting = cardAfterCombat
+            cardAfterCombat = nil
+            if waiting and GL:ToggleWindow(true) then openCard(waiting) end
+        end)
+    end
+    combatWatch:RegisterEvent("PLAYER_REGEN_ENABLED")
+end
+
 openCard = function(member)
     if not member then return end
     if not card then
+        if InCombatLockdown and InCombatLockdown() then openAfterCombat(member) return end
         local ok, err = pcall(buildCard)
         if not ok then GL:Print("the member card could not be built: " .. tostring(err)) return end
     end

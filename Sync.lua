@@ -47,11 +47,20 @@ GL.Sync = Sync
 local frame = CreateFrame("Frame")
 local registered = false
 
-local RESULT = {
+-- Enum.SendAddonMessageResult as retail numbers it; used only when the client has no enum of its own.
+local RESULT_FALLBACK = {
     Success = 0, InvalidPrefix = 1, InvalidMessage = 2, AddonMessageThrottle = 3, InvalidChatType = 4, NotInGroup = 5,
     TargetRequired = 6, InvalidChannel = 7, ChannelThrottle = 8, GeneralError = 9, NotInGuild = 10, AddOnMessageLockdown = 11,
     TargetOffline = 12,
 }
+
+-- The client's own result codes when it has them, so a client that numbers them differently is still read right.
+-- With the client's enum, a code it lacks matches nothing rather than borrowing a retail number.
+local function resultCodes()
+    local codes = Enum and Enum.SendAddonMessageResult
+    if type(codes) == "table" then return codes end
+    return RESULT_FALLBACK
+end
 
 local function clean(text)
     text = tostring(text or "")
@@ -77,16 +86,13 @@ local function trusted(guild, sender)
 end
 
 -- Are addon messages forbidden right now (boss encounters and similar)?
+-- C_ChatInfo.AreOutgoingAddonChatMessagesRestricted is deliberately not asked: it is a per-realm flag that answers
+-- true on WoW Forever in the open world while guild and whisper addon messages still go through, and holding the
+-- queue on it meant nothing was ever sent. A real refusal comes back as the send's own result code (see sendNow).
 local function lockedDown()
-    if C_ChatInfo then
-        if C_ChatInfo.InChatMessagingLockdown then
-            local ok, locked = pcall(C_ChatInfo.InChatMessagingLockdown)
-            if ok and locked then return true end
-        end
-        if C_ChatInfo.AreOutgoingAddonChatMessagesRestricted then
-            local ok, locked = pcall(C_ChatInfo.AreOutgoingAddonChatMessagesRestricted)
-            if ok and locked then return true end
-        end
+    if C_ChatInfo and C_ChatInfo.InChatMessagingLockdown then
+        local ok, locked = pcall(C_ChatInfo.InChatMessagingLockdown)
+        if ok and locked then return true end
     end
     return false
 end
@@ -134,30 +140,34 @@ local function dropWhere(test)
 end
 
 -- Sends one queued message. Returns how long to wait before the next attempt and whether the item was handled.
+-- Every message given up on counts in Sync.dropped, so the status line shows when the game keeps refusing sends.
 local function sendNow(item)
     local send = C_ChatInfo and C_ChatInfo.SendAddonMessage or SendAddonMessage
-    if not send then return SEND_GAP, true end
+    if not send then Sync.dropped = Sync.dropped + 1; return SEND_GAP, true end
     local ok, result = pcall(send, PREFIX, item.message, item.channel, item.target)
-    if not ok then return SEND_GAP, true end                                     -- bad call; nothing to retry
-    if result == nil or result == true or result == RESULT.Success then return SEND_GAP, true end
-    if result == RESULT.AddonMessageThrottle or result == RESULT.ChannelThrottle then
+    if not ok then Sync.dropped = Sync.dropped + 1; return SEND_GAP, true end   -- bad call; nothing to retry
+    local codes = resultCodes()
+    if result == nil or result == true or result == codes.Success then return SEND_GAP, true end
+    if result == codes.AddonMessageThrottle or result == codes.ChannelThrottle then
         Sync.state = "throttled"
         return THROTTLE_WAIT, false
     end
-    if result == RESULT.AddOnMessageLockdown then
+    if result == codes.AddOnMessageLockdown then
         Sync.state = "lockdown"
         return LOCKDOWN_WAIT, false
     end
-    if result == RESULT.TargetOffline then
+    -- dropWhere counts what it removes, and the queue still holds this item, so it is counted there
+    if result == codes.TargetOffline then
         local target = item.target
         dropWhere(function(other) return other.channel == "WHISPER" and other.target == target end)
         return SEND_GAP, true
     end
-    if result == RESULT.NotInGuild then
+    if result == codes.NotInGuild then
         dropWhere(function(other) return other.channel == "GUILD" end)
         return SEND_GAP, true
     end
-    return SEND_GAP, true                                                        -- malformed or impossible; drop it
+    Sync.dropped = Sync.dropped + 1                                              -- malformed or impossible; drop it
+    return SEND_GAP, true
 end
 
 local wait, runTimer = 0, 0
@@ -453,8 +463,10 @@ local function apply(guild, fields, sender)
             if not ban or (ban.stamp or 0) < stamp then
                 if lifted > 0 then
                     if not ban then guild.bans[name] = { t = t, by = by, reason = reason, class = class ~= "" and class or nil, stamp = stamp } end
-                    if not guild.bans[name].lifted then GL:Unban(guild, name, "sync", liftedBy, stamp) end
-                    guild.bans[name].lifted = lifted
+                    local b = guild.bans[name]
+                    -- Set directly: GL:Unban refuses a sync whose stamp matches the ban's own stamp, which dropped liftedBy.
+                    if not b.lifted then GL:AddEvent(guild, "unban", { who = name, by = liftedBy, src = "sync" }, stamp) end
+                    b.lifted, b.liftedBy, b.stamp = lifted, liftedBy ~= "" and liftedBy or nil, stamp
                 else
                     if ban and ban.lifted then ban.lifted, ban.liftedBy = nil, nil end
                     GL:Ban(guild, name, reason, "sync", by, t, stamp)
