@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.2.14
+
+More fixes found and written by Boothian (Never Lucky). Thank you.
+
+- The Log now matches the game's guild log. Duplicate entries about an hour apart are gone, events are kept in time order (so "since your last visit" and the To-do stop missing things), and joins, invites and leaves are recorded for people who have already left, so the Former list fills in. An invite nobody accepted shows as a new "Invited" line.
+- Leaves and removals are recorded the moment the game prints "has left the guild", not two roster reads later.
+- Joins and leaves that happened while no officer was online take the game log's time, not the time you logged in, and are no longer logged twice.
+- One-time repair: the first time you log in with this version, Tabard takes a backup, then sorts your saved ledger, removes the duplicates and fills in missing joins, invites and former members from what it remembers of the game log. It prints one line saying what it changed. `/tabard restore` undoes it. The backup replaces any backup you already had.
+- Fix: chat announcements stayed off for the rest of the session after a failed import or roster read.
+- Guild notes on the member card are read-only, with an "Edit in roster" button that opens the game's guild window. The game blocks addons from writing notes ("Tabard has been blocked from an action only available to the Blizzard UI"). The "Write the join date into" setting is gone for the same reason. The Tabard note and Nickname are unchanged.
+- The Tools page's "Remove all" and "Promote all" buttons are gone; the game blocks them too. The Macro button stays, and its message now names the macro "Tabard".
+
 ## 1.2.13
 
 Fixes found and written by Boothian (Never Lucky), reported on CurseForge and GitHub. Thank you.
