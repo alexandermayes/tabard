@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.12
+
+- Fix: in 1.2.11 BugSack showed "AddOn 'Tabard' tried to call the protected function 'TabardUIInviteFrame:Hide()'". The Invite button (a secure button, so your click can send /ginvite) was anchored to the Invite bar, which made the bar itself protected, and the bar's 60-second auto-hide or its close button then failed in combat. The button now sits beside the bar as its own frame and follows the bar after a drag; the bar hides in combat again, and the button goes transparent until combat ends.
+
 ## 1.2.11
 
 - Pick the trial rank by name (asked for on CurseForge). Settings has two new dropdowns, "Trial rank" and "Newcomer rank", listing your guild's ranks; before, the trial rank was a "rank index" number box at the bottom of the thresholds, and the newcomer rank (the one promotions are suggested out of) could not be set at all. Both default to the newest rank, as before. The number box is gone.

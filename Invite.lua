@@ -6,9 +6,13 @@
 -- button, arms it with a name and shows it; the player's click, or a key bound to the button, sends the invite.
 -- Arming comes from a whisper by someone outside the guild, from "/tabard invite Name", from the unit right-click
 -- menu and from the key binding. Nothing is ever sent from a timer; the timer only hides the bar again.
+-- The bar and the secure button are separate children of UIParent and the button is never anchored to the bar:
+-- a frame that a secure button hangs off becomes protected itself, and then hiding the bar in combat is blocked
+-- ("tried to call the protected function TabardUIInviteFrame:Hide()", 1.2.11). The button is placed at the bar's
+-- screen position instead, and follows it again after a drag.
 
 local ADDON_NAME, GL = ...
-local Invite = { armedName = nil, lastArmed = nil, lastWhisperer = nil, pending = nil, parkLater = false }
+local Invite = { armedName = nil, lastArmed = nil, lastWhisperer = nil, pending = nil, parkLater = false, placeLater = false }
 GL.Invite = Invite
 
 local HIDE_AFTER = 60   -- seconds the bar stays up before it hides itself
@@ -38,10 +42,24 @@ local function park()
     button:SetAlpha(0)
 end
 
+-- Puts the button where the bar is, anchored to UIParent only (see the top of the file). Outside combat only.
 local function place()
+    local left, bottom = frame:GetLeft(), frame:GetBottom()
     button:ClearAllPoints()
-    button:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 10, 8)
+    if type(left) == "number" and type(bottom) == "number" then
+        button:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", left + 10, bottom + 8)
+    else
+        button:SetPoint("TOP", UIParent, "TOP", -60, -160 - 26)
+    end
     button:SetAlpha(1)
+end
+
+-- The button follows the bar once combat allows it.
+local function follow()
+    if not Invite.armedName then return end
+    if inCombat() then Invite.placeLater = true return end
+    Invite.placeLater = false
+    place()
 end
 
 local function build()
@@ -61,7 +79,7 @@ local function build()
     frame:EnableMouse(true)
     frame:RegisterForDrag("LeftButton")
     frame:SetScript("OnDragStart", frame.StartMoving)
-    frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
+    frame:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() follow() end)
     frame:SetClampedToScreen(true)
     frame:Hide()
     frame.text = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -124,9 +142,9 @@ function Invite:Arm(name, why)
     end
     button:SetAttribute("macrotext", "/ginvite " .. name)
     button:SetText("Invite " .. name)
-    place()
     frame.text:SetText(why or (name .. " is not in the guild."))
     frame:Show()
+    place()
     self.armedName, self.lastArmed, self.pending = name, name, nil
     local stamp = GetTime()
     self.armedAt = stamp
@@ -136,12 +154,13 @@ function Invite:Arm(name, why)
     return true
 end
 
--- Hides the bar and clears the button (the clearing waits for the end of combat when needed).
+-- Hides the bar and clears the button. The bar is never protected, so it hides in combat too; the button's
+-- macro and position can only change out of combat, so in combat it goes transparent and is parked afterwards.
 function Invite:Disarm()
-    self.armedName, self.pending = nil, nil
+    self.armedName, self.pending, self.placeLater = nil, nil, false
     if not frame then return end
     frame:Hide()
-    if inCombat() then self.parkLater = true return end
+    if inCombat() then button:SetAlpha(0) self.parkLater = true return end
     button:SetAttribute("macrotext", "")
     park()
     self.parkLater = false
@@ -172,6 +191,7 @@ events:SetScript("OnEvent", function(_, event, text, sender)
         if not ok then GL:Print("could not offer an invite: " .. tostring(err)) end
     elseif event == "PLAYER_REGEN_ENABLED" then
         if Invite.parkLater and button then Invite:Disarm() end
+        if Invite.placeLater then follow() end
         local pending = Invite.pending
         if pending then Invite.pending = nil Invite:Arm(pending.name, pending.why) end
     elseif event == "PLAYER_LOGIN" then
