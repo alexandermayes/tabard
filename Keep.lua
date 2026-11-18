@@ -142,3 +142,152 @@ function GL:KeepCommand(rest)
         self:Print(string.format("saved data about %s; backup: %s. Commands: /tabard backup, /tabard restore, /tabard tidy.", self:DBSizeText(), t and (label .. ", " .. self:FormatTime(t)) or "none"))
     end
 end
+
+-- One-time ledger repair ------------------------------------------------------------------------------------
+-- Runs once per guild (guild.repaired = 1): backup, sort, remove drift duplicates, then rebuild joins, invites and
+-- former members from the saved game-log fingerprints through the live import code (replay mode).
+-- Returns the report { duplicates, former, joins, invites }. Prints nothing and announces nothing.
+local function countKinds(guild)
+    local joins, invites = 0, 0
+    for _, event in ipairs(guild.events) do
+        if event.k == "join" or event.k == "rejoin" then joins = joins + 1
+        elseif event.k == "invite" then invites = invites + 1 end
+    end
+    return joins, invites
+end
+
+local SEEN_KINDS = { invite = true, join = true, promote = true, demote = true, remove = true, quit = true }
+
+function GL:RepairLedger(guild)
+    local report = { duplicates = 0, former = 0, joins = 0, invites = 0 }
+    if not (guild and self.db) then return report end
+    guild.events = guild.events or {}
+    guild.seen = guild.seen or {}
+    guild.former = guild.former or {}
+    guild.members = guild.members or {}
+    guild.repaired = 1   -- set first: the backup copy carries it (so a restore is not repaired again) and a failure never repeats
+    local backedUp, backupErr = pcall(self.Backup, self, guild, "before ledger repair")
+    if not backedUp or backupErr == false then
+        report.skipped = true
+        return report
+    end
+    local wasQuiet = self.quiet
+    self.quiet = true
+    local good, err = pcall(function()
+        self:UpgradeSeen(guild)
+        -- Events without a usable time cannot be placed: drop them.
+        local clean = {}
+        for _, event in ipairs(guild.events) do
+            if type(event) == "table" and type(event.t) == "number" then clean[#clean + 1] = event
+            else report.duplicates = report.duplicates + 1 end
+        end
+        guild.events = clean
+        self:SortEvents(guild)
+        for _, event in ipairs(guild.events) do
+            if event.src == "game" then event.g = true end
+        end
+        -- Dedupe: a game event merges into its partner (one-to-one), keeping the scan one or the earlier game one.
+        local done, removed = {}, {}
+        local MEMBERSHIP = { join = true, rejoin = true, leave = true, kick = true }
+        local RANKS = { promote = true, demote = true }
+        -- Two events are not one when an event of the same family about that person lies between them
+        -- (a promotion between two promotions, a leave between a join and a rejoin).
+        local function blocked(a, b)
+            local family = RANKS[a.k] and RANKS or MEMBERSHIP[a.k] and MEMBERSHIP
+            if not family then return false end
+            local lo, hi = math.min(a.t, b.t), math.max(a.t, b.t)
+            for _, other in ipairs(guild.events) do
+                if other ~= a and other ~= b and other.who == a.who and family[other.k]
+                    and other.t > lo and other.t < hi then return true end
+            end
+            return false
+        end
+        -- Nor when they disagree on who did it or the ranks, where both say.
+        local function differ(a, b)
+            for _, field in ipairs({ "by", "from", "to" }) do
+                if a[field] ~= nil and b[field] ~= nil and a[field] ~= b[field] then return true end
+            end
+            return false
+        end
+        for _, e in ipairs(guild.events) do
+            if e.src == "game" and not done[e] then
+                -- The nearest partner that agrees with it; one that disagrees is skipped, not merged.
+                local skip = setmetatable({}, { __index = done })
+                local partner
+                repeat
+                    partner = self:MatchEvent(guild, e.k, e.who, e.t, "game", { ignoreClaim = true, exclude = e, claimed = skip })
+                    if partner and differ(e, partner) then skip[partner] = true else break end
+                until false
+                if partner then
+                    if not blocked(e, partner) then
+                        local keep, drop = partner, e
+                        if partner.src == "game" and e.t < partner.t then keep, drop = e, partner end
+                        for k, v in pairs(drop) do
+                            if keep[k] == nil then keep[k] = v end
+                        end
+                        -- A removal read as a plain leave on one side is a removal.
+                        if drop.k == "kick" and keep.k == "leave" then
+                            keep.k = "kick"
+                            local former = guild.former[keep.who]
+                            if former and (not former.left or math.abs(former.left - keep.t) <= 7200 or math.abs(former.left - drop.t) <= 7200) then
+                                former.leftKind, former.leftBy = "kick", keep.by or former.leftBy
+                            end
+                        end
+                        keep.g = true
+                        done[keep], done[drop] = true, true
+                        removed[drop] = true
+                        report.duplicates = report.duplicates + 1
+                    end
+                end
+            end
+        end
+        if next(removed) then
+            local kept = {}
+            for _, event in ipairs(guild.events) do
+                if not removed[event] then kept[#kept + 1] = event end
+            end
+            guild.events = kept
+        end
+        -- Rebuild from the saved fingerprints, one entry per remembered time.
+        local entries = {}
+        for key, times in pairs(guild.seen) do
+            local fields = {}
+            for part in (key .. "|"):gmatch("([^|]*)|") do fields[#fields + 1] = part end
+            if SEEN_KINDS[fields[1]] and fields[2] and fields[2] ~= "" and type(times) == "table" then
+                for _, t in ipairs(times) do
+                    if type(t) == "number" then
+                        entries[#entries + 1] = { kind = fields[1], p1 = fields[2], p2 = fields[3] ~= "" and fields[3] or nil,
+                            rank = fields[4] ~= "" and fields[4] or nil, t = t }
+                    end
+                end
+            end
+        end
+        table.sort(entries, function(a, b)
+            if a.t ~= b.t then return a.t < b.t end
+            if a.kind ~= b.kind then return a.kind < b.kind end
+            return a.p1 < b.p1
+        end)
+        local joins0, invites0 = countKinds(guild)
+        local former0 = self:Count(guild.former)
+        self:ImportGameLogEntries(guild, entries, { replay = true })
+        local joins1, invites1 = countKinds(guild)
+        report.joins = math.max(0, joins1 - joins0)
+        report.invites = math.max(0, invites1 - invites0)
+        report.former = math.max(0, self:Count(guild.former) - former0)
+    end)
+    self.quiet = wasQuiet
+    if not good then report.failed = tostring(err) end
+    return report
+end
+
+function GL:RepairLine(report)
+    if report.skipped then
+        return "the ledger repair was skipped because the backup could not be taken; nothing was changed."
+    end
+    if report.failed then
+        return "the ledger repair failed (" .. report.failed .. "); the backup from before the repair can be restored with /tabard restore."
+    end
+    if (report.duplicates + report.former + report.joins + report.invites) <= 0 then return nil end
+    return string.format("repaired the ledger: removed %d duplicates, added %d former members, %d joins and %d invites; a backup was taken.",
+        report.duplicates, report.former, report.joins, report.invites)
+end
