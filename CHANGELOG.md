@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.2.13
+
+Fixes found and written by Boothian (Never Lucky), reported on CurseForge and GitHub. Thank you.
+
+- Fix: sharing between officers never sent anything on WoW Forever. The Overview said "Sync: queue 4, lockdown", "Ask officers" only made the queue longer, and everyone saw "Nobody else runs Tabard yet". Tabard was waiting on a game flag that says addon messages are restricted, and on Forever that flag is always on in the open world even though guild and whisper addon messages go through. The queue now waits only during a real chat lockdown or when a send itself is refused, and the status line shows "N dropped" if the game keeps refusing.
+- Fix: "Add a ban" never asked for the reason and the card's Leave "Set" never saved. The second prompt opened while the first was still closing and was closed with it.
+- Fix: the unit tooltip, the newcomer "grouped with a guildie" flag and the raid roster looked other players up by first name only, so they never matched the roster's "First Last" names.
+- Fix: a lifted ban shared by another officer lost who lifted it.
+- Fix: the first roster read after login no longer counts everyone who came or went while you were away as a character switch, which fed the alt suggestions false handoffs.
+- Fix: opening the member card for the first time in combat raised the game's "blocked action" popup. It now says the card opens after combat, and opens it then.
+
 ## 1.2.12
 
 - Fix: in 1.2.11 BugSack showed "AddOn 'Tabard' tried to call the protected function 'TabardUIInviteFrame:Hide()'". The Invite button (a secure button, so your click can send /ginvite) was anchored to the Invite bar, which made the bar itself protected, and the bar's 60-second auto-hide or its close button then failed in combat. The button now sits beside the bar as its own frame and follows the bar after a drag; the bar hides in combat again, and the button goes transparent until combat ends.
