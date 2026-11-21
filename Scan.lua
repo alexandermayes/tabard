@@ -344,18 +344,27 @@ local function diffRoster(guild, roster, now, partial, prevScan, late)
     end
 
     -- Leaves: only from a complete roster, and only after the member has been missing from several scans in a row.
-    if partial then return end
+    -- Returns how many members are missing for the first time: ProcessRoster asks for another read soon, so that
+    -- someone who left while you were away is recorded seconds after login rather than minutes.
+    if partial then return 0 end
+    local unconfirmed = 0
     for name, member in pairs(members) do
         if not roster[name] then
             member.missing = (member.missing or 0) + 1
             if late and member.missing == 1 then member.missingLate = true end
-            if member.missing >= LEAVE_CONFIRM_SCANS then
+            -- The game's own log naming the leave confirms it as well as a second roster read does.
+            local pending = guild.pendingLeave and guild.pendingLeave[name]
+            local named = type(pending) == "table" and type(pending.t) == "number" and (now - (pending.at or 0)) <= PENDING_KEEP
+                and pending.t >= (member.joined or member.firstSeen or 0)
+            if member.missing < LEAVE_CONFIRM_SCANS and not named then unconfirmed = unconfirmed + 1 end
+            if member.missing >= LEAVE_CONFIRM_SCANS or named then
                 -- Seen late (on this read or the first one that missed them): they left after they were last listed.
                 local leftLate = (late or member.missingLate) and (member.lastSeen or late or (now - LATE_FLOOR)) or nil
                 recordLeave(guild, name, member, "leave", nil, now, nil, leftLate)
             end
         end
     end
+    return unconfirmed
 end
 
 -- Game event log -----------------------------------------------------------------------------------
@@ -497,6 +506,12 @@ function GL:ImportGameLogEntries(guild, entries, opts)
             if type(pending) ~= "table" or now - (pending.at or 0) > PENDING_KEEP then guild.pendingLeave[other] = nil end
         end
         guild.pendingLeave[name] = { t = t, kind = leftKind, by = by, at = now }
+        -- Already missing from a complete roster read: the two agree, so the leave is recorded now (with the
+        -- log's time, kind and remover) instead of waiting for a second read.
+        local member = guild.members[name]
+        if member and member.missing and t >= (member.joined or member.firstSeen or 0) then
+            recordLeave(guild, name, member, leftKind, by, now)
+        end
     end
     for _, entry in ipairs(entries) do
         if not old[entry] then
@@ -623,6 +638,11 @@ function GL:ProcessRoster()
     local roster, total, count = readRoster()
     if not roster then return end
     local now = self:Now()
+    -- The realm's name changed under the guild and a new ledger was started beside the old one: one ledger again.
+    if total == count and self.RejoinLedgers then
+        local ok, err = pcall(self.RejoinLedgers, self, guild, roster, total)
+        if not ok then self:Print("could not join this guild's older records: " .. tostring(err)) end
+    end
     local partial = partialReason(guild, total, count, now)
     if partial and not guild.seeded then return end   -- never start from half a roster
     guild.scans = (guild.scans or 0) + 1
@@ -652,8 +672,14 @@ function GL:ProcessRoster()
         -- old. lastScan is saved, so a /reload a moment later is not late and keeps the exact scan times.
         local late
         if not prevScan or (now - prevScan) > LATE_GAP then late = prevScan or (now - LATE_FLOOR) end
-        diffRoster(guild, roster, now, partial ~= nil, prevScan, late)
+        local unconfirmed = diffRoster(guild, roster, now, partial ~= nil, prevScan, late)
+        -- Someone is missing for the first time: read again as soon as the game allows (it answers one roster
+        -- request every ten seconds) instead of whenever the next update happens to come.
+        if unconfirmed and unconfirmed > 0 then
+            C_Timer.After(11, function() GL:RequestScan(true) end)
+        end
     end
+    if self.NoteVisit then pcall(self.NoteVisit, self, guild, prevScan) end
     if self.ApplySelfGroup then pcall(self.ApplySelfGroup, self, guild) end
     if self.LearnFromGRM then pcall(self.LearnFromGRM, self, guild) end
     if self.TickFirstWeek then

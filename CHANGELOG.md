@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.15
+
+- Fix: "Since your last visit" said "After your next login this lists what changed while you were away" (or that nothing had changed) when people had joined and left. Three causes:
+  - Tabard files a guild's records under the guild and realm name, and on WoW Forever the realm's name changed (and now comes back empty). Each time, Tabard quietly started an empty ledger beside the old one: no history, no join dates, no last visit. The first roster read now recognises the older records as the same guild (same name, mostly the same people) and folds them into one ledger, and a later rename carries the ledger along. It prints one line when it does. The originals are kept in the saved file for 30 days.
+  - The time of your last visit was written when you logged out, and on Forever the game no longer says which guild you are in by then, so it was only ever written on a /reload. It is now stamped with every roster read.
+  - Someone who left while you were away was only recorded after two roster reads, and the second could come minutes after the login report had already said "nothing has changed". Tabard now asks for the second read ten seconds after the first, records the leave at once when the game's own log names it, and the login report and login card wait until that is done (40 seconds at most).
+- Removed the setting "Offer an Invite button when someone outside the guild whispers you". The Invite bar no longer comes up on a whisper. `/tabard invite NAME`, "Invite to guild" in the right-click menu and the key binding still put it up.
+
 ## 1.2.14
 
 More fixes found and written by Boothian (Never Lucky). Thank you.

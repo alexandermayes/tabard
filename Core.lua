@@ -15,7 +15,7 @@ local function tocVersion()
 end
 GL.version = tocVersion() or "0.0.0"
 -- One line for the "updated to" message at the first login after an update (an addon cannot read CHANGELOG.md).
-GL.whatsNew = "pick the trial and newcomer ranks by name in Settings, a DING! line for level-ups, a secure Invite button"
+GL.whatsNew = "records split by a realm rename are one ledger again, and the login report waits for everyone who left while you were away"
 
 -- "1.2.10" -> 1002010, so versions compare as numbers; nil when the text is not a version.
 function GL:VersionNumber(text)
@@ -82,7 +82,6 @@ local DEFAULT_SETTINGS = {
     mainTags = true,         -- "(main)" / "(alt of X)" after names on event lines
     firstWeek = true,        -- track new members' first week: time online, whether anyone talked to them
     anniversaries = true,    -- mention join anniversaries and birthdays at login
-    inviteBar = true,        -- offer the secure Invite button when someone outside the guild whispers you
     loginReport = true,      -- list who joined, left and changed rank while you were away, at login
     minimap = { shown = true, angle = 220 },
     windowPoint = nil,       -- saved window position { point, x, y }
