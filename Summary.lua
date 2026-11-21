@@ -1,9 +1,8 @@
 -- Tabard: "since you were last here"
--- Stamps the guild with the time of your last logout and, at the next real login, keeps that stamp as the
+-- Stamps the guild with the time you were last on and, at the next real login, keeps that stamp as the
 -- "last visit" marker for the session. Everything recorded after the marker is what changed while you were
 -- away: a one-line chat summary, the "Since your last visit" block on the Overview and the divider in the Log,
--- like Guild Roster Manager's login report. PLAYER_LOGOUT also fires on /reload, so the marker is captured
--- once per login rather than read from lastVisit directly.
+-- like Guild Roster Manager's login report. The marker is captured once per login, not per /reload.
 
 local ADDON_NAME, GL = ...
 
@@ -113,24 +112,53 @@ function GL:PrintLoginReport(guild)
     end
 end
 
+-- The marker. It is taken with the first roster read of a login, not at the loading screen: only then is it
+-- certain which ledger is this guild's (Keep.lua folds ledgers a realm rename split). And it does not depend on
+-- the logout: on WoW Forever the guild is already gone when PLAYER_LOGOUT fires on a real logout, so the stamp
+-- written there only ever landed on a /reload. Every roster read stamps the visit instead (they come at least
+-- every five minutes), and the marker is the later of that stamp and the last roster read before this login.
+local entered, wasLogin = false, false   -- has the loading screen told us whether this is a login or a reload?
 local captured = false
-local function captureVisit()
-    if captured then return end
-    local guild = GL.db and IsInGuild() and GL:Guild()
+local sawRead, readBefore = false, nil   -- the last roster read before this session
+local visitGuild
+
+-- Called after every roster read (Scan.lua). prevScan: the read before this one.
+function GL:NoteVisit(guild, prevScan)
     if not guild then return end
-    guild.visitSince = guild.lastVisit
-    captured = true
+    if not sawRead then sawRead, readBefore = true, prevScan end
+    if not entered then return end
+    if not captured then
+        captured = true
+        if wasLogin then
+            local since = math.max(type(guild.lastVisit) == "number" and guild.lastVisit or 0, type(readBefore) == "number" and readBefore or 0)
+            guild.visitSince = since > 0 and since or nil
+        end
+    end
+    visitGuild = guild
+    guild.lastVisit = self:Now()
 end
+
+-- Is everything that changed while you were away recorded? Someone missing from the first roster read is only
+-- recorded as gone once a second read (or the game's log) agrees, a few seconds later.
+function GL:AwaySettled(guild)
+    if not (captured and self.sessionReady and guild) then return false end
+    for _, member in pairs(guild.members) do
+        if member.missing then return false end
+    end
+    return true
+end
+
+local REPORT_WAIT = 40   -- seconds after login the report waits, at most, for the roster to settle
 
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("PLAYER_LOGOUT")
 frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 frame:SetScript("OnEvent", function(self, event, isLogin, isReload)
     if event == "PLAYER_LOGOUT" then
-        local guild = GL.db and GL:Guild()
-        if guild then guild.lastVisit = GL:Now() end
+        if captured and visitGuild then visitGuild.lastVisit = GL:Now() end
     elseif event == "PLAYER_ENTERING_WORLD" then
         self:UnregisterEvent("PLAYER_ENTERING_WORLD")
+        entered, wasLogin = true, isLogin and true or false
         if isLogin then
             -- One line at login like other addons print, and what changed when the CurseForge app updated us.
             local db = GL.db
@@ -141,13 +169,19 @@ frame:SetScript("OnEvent", function(self, event, isLogin, isReload)
             else
                 GL:Print(GL.version .. " loaded. |cffffffff/tabard|r opens the window.")
             end
-            captureVisit()   -- the guild may not be known this early; the timer below tries again
         end
-        -- Wait for the first roster read so joins and leaves since the logout are recorded first. After a
-        -- reload the marker is the one from login, so the summary line repeats; the long report does not.
-        C_Timer.After(isLogin and 12 or 6, function()
-            if isLogin then captureVisit() end
+        -- Wait for the roster so joins and leaves since the logout are recorded first: at login until it has
+        -- settled (see AwaySettled), with a limit. After a reload the marker is the one from login, so the
+        -- summary line repeats; the long report does not.
+        local waited = isLogin and 12 or 6
+        local function report()
             local guild = GL.db and IsInGuild() and GL:Guild()
+            if isLogin and waited < REPORT_WAIT and not (guild and GL:AwaySettled(guild)) then
+                waited = waited + 2
+                C_Timer.After(2, report)
+                return
+            end
+            GL.awayReported = true   -- the login card waits for this (UI.lua)
             if not guild then return end
             local counts = GL:SinceLastVisit(guild)
             local text = GL:AwayText(counts)
@@ -157,6 +191,7 @@ frame:SetScript("OnEvent", function(self, event, isLogin, isReload)
             elseif counts then
                 GL:Print("nothing has changed since you were last here (" .. GL:Ago(counts.since) .. ").")
             end
-        end)
+        end
+        C_Timer.After(waited, report)
     end
 end)

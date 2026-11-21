@@ -4,8 +4,8 @@
 -- open the Add Member box or put a line into the chat box either. What does work is a SecureActionButton with a
 -- "/ginvite Name" macro, clicked by the player (the way the member card promotes). So Tabard keeps one such
 -- button, arms it with a name and shows it; the player's click, or a key bound to the button, sends the invite.
--- Arming comes from a whisper by someone outside the guild, from "/tabard invite Name", from the unit right-click
--- menu and from the key binding. Nothing is ever sent from a timer; the timer only hides the bar again.
+-- Arming comes from "/tabard invite Name", from the unit right-click menu and from the key binding (which takes
+-- the last person outside the guild who whispered you). Nothing is ever sent from a timer; the timer only hides the bar again.
 -- The bar and the secure button are separate children of UIParent and the button is never anchored to the bar:
 -- a frame that a secure button hangs off becomes protected itself, and then hiding the bar in combat is blocked
 -- ("tried to call the protected function TabardUIInviteFrame:Hide()", 1.2.11). The button is placed at the bar's
@@ -166,9 +166,10 @@ function Invite:Disarm()
     self.parkLater = false
 end
 
--- A whisper from someone who is not in the guild offers the invite (Settings: "Offer an Invite button...").
+-- A whisper from someone who is not in the guild is only remembered: the key binding and "/tabard invite" with
+-- no name offer the last one. The bar no longer comes up by itself on a whisper (removed in 1.2.15).
 local function onWhisper(text, sender)
-    if not (GL.db and GL.settings and GL.settings.inviteBar ~= false) then return end
+    if not GL.db then return end
     if not IsInGuild() then return end
     if CanGuildInvite and not CanGuildInvite() then return end
     local name = cleanName(sender)
@@ -176,9 +177,6 @@ local function onWhisper(text, sender)
     local guild = GL:Guild()
     if not guild or guild.members[name] then return end
     Invite.lastWhisperer = name
-    local why = name .. " whispered you and is not in the guild."
-    if GL.IsBanned and GL:IsBanned(guild, name) then why = "|cffff5555" .. name .. " is on the ban list.|r" end
-    Invite:Arm(name, why)
 end
 
 local events = CreateFrame("Frame")
@@ -188,7 +186,7 @@ events:RegisterEvent("PLAYER_LOGIN")
 events:SetScript("OnEvent", function(_, event, text, sender)
     if event == "CHAT_MSG_WHISPER" then
         local ok, err = pcall(onWhisper, text, sender)
-        if not ok then GL:Print("could not offer an invite: " .. tostring(err)) end
+        if not ok then GL:Print("could not note the whisper: " .. tostring(err)) end
     elseif event == "PLAYER_REGEN_ENABLED" then
         if Invite.parkLater and button then Invite:Disarm() end
         if Invite.placeLater then follow() end

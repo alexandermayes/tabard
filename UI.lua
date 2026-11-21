@@ -3337,10 +3337,9 @@ local function buildSettingsPage()
         { key = "loginReport", label = "At login, list who joined, left and changed rank while I was away" },
         { key = "hints", label = "Show the main's name, or the nickname, after names in guild chat", default = true },
         { key = "requests", label = "Accept requests whispered to you (!main, !bday, !loa); they land on the To-do tab", default = true },
-        { key = "inviteBar", label = "Offer an Invite button when someone outside the guild whispers you (your click sends it)", default = true },
         { key = "raidTracking", label = "Track raid attendance, bench and loot while you are in a raid group", default = true },
     }
-    local behaviourHeight = 34 + 15 * 30 + 6
+    local behaviourHeight = 34 + 14 * 30 + 6
     page.behaviourBox = section(content, "Sharing and tooltips", rightX, -PAD, rightWidth, behaviourHeight)
     page.options = {}
     page.optionDefaults = {}
@@ -4544,12 +4543,20 @@ loginFrame:SetScript("OnEvent", function(self, _, isLogin)
     if isLogin then C_Timer.After(20, function() pcall(askOwnBirthday) end) end
     local mode = GL.settings and GL.settings.openOnLogin or LOGIN_DEFAULT
     if mode == "card" then
-        -- At login the last-visit marker is set once the roster has been read (Summary.lua, 12 s); the card waits for it.
-        C_Timer.After(isLogin and 13 or 6, function()
+        -- At login the card waits for the chat report (Summary.lua): that goes out once the roster has been read
+        -- and everyone who left while you were away is recorded, 12 to 40 seconds in.
+        local waited = 0
+        local function show()
+            if isLogin and not GL.awayReported and waited < 45 then
+                waited = waited + 1
+                C_Timer.After(1, show)
+                return
+            end
             if not (GL.db and IsInGuild()) then return end
             if InCombatLockdown and InCombatLockdown() then return end
             pcall(GL.ShowLoginCard, GL)
-        end)
+        end
+        C_Timer.After(isLogin and 13 or 6, show)
         return
     end
     C_Timer.After(6, function()
