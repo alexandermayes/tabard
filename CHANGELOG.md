@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.16
+
+- Fix: nicknames disappeared. A nickname is kept on a person's main, and it was only looked for there, so it vanished from every character of theirs when another character became the main. One way that happened: after the realm's name changed, the empty ledger that was started grouped the characters of people who run Tabard again, sometimes under another main, and 1.2.15 kept that main when it joined the ledgers. Nothing was deleted; the nickname was still on the old main. It is now read from all of a person's characters, the one set or cleared last, so those nicknames are back and a change of main no longer loses them.
+- Nicknames have been shared between officers since 1.2.0, but one set by an officer whose main for that person differs from yours only showed on that one character. It shows on all of them now.
+- Fix: after picking a rank from Promote or Demote on the member card (or pressing Remove), the "Promote Name to Rank" button was drawn through the Promote, Demote, Remove and Ban buttons. Those are hidden while it shows, and it is as wide as the row so longer names fit.
+
 ## 1.2.15
 
 - Fix: "Since your last visit" said "After your next login this lists what changed while you were away" (or that nothing had changed) when people had joined and left. Three causes:
