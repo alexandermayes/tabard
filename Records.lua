@@ -249,11 +249,15 @@ function GL:SetNickname(guild, member, text, source, by, stamp)
     text = type(text) == "string" and strtrim(text) or ""
     if #text > 31 then text = string.sub(text, 1, 31) end
     if source ~= "sync" then
+        -- What the person goes by may be written on another of their characters (GL:Nickname reads the group,
+        -- newest first), so this one is written on the main with a time later than any of those.
+        local current, newest = self:Nickname(guild, member)
+        if (current or "") == text then return false end
         local main = self.MainOf and self:MainOf(guild, member)
         if main then member = main end
+        if not stamp and (newest or 0) >= self:Now() then stamp = newest + 1 end
     end
     if source == "sync" and (stamp or 0) <= self:StampOf(member, "nick") then return false end
-    if (member.nick or "") == text and source ~= "sync" then return false end
     member.nick, member.nickBy = text ~= "" and text or nil, by or self:PlayerName()
     self:Stamp(member, "nick", stamp)
     if recordable(source) then self:AddEvent(guild, "nick", { who = member.name, to = text, by = member.nickBy, src = source or "user" }, stamp) end

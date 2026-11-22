@@ -3924,13 +3924,21 @@ local function buildCard()
     -- click fires. Cancel, or opening another member, disarms it. A rank further away is several lines of
     -- the same command, since the client only has one-step promote and demote.
     local SLASH = { promote = "/gpromote", demote = "/gdemote", kick = "/gremove" }
+    -- The armed row sits where the row of buttons is and that row is hidden while it shows: the two are
+    -- siblings on the same frame level, so drawn together their buttons show through each other. It is anchored
+    -- like `actions`, not to it, because a frame a secure button hangs from cannot be hidden in combat.
     local armed = CreateFrame("Frame", nil, card)
-    armed:SetAllPoints(actions)   -- made after the row's buttons, so it draws over them while armed
+    armed:SetPoint("TOPLEFT", inset, "TOPLEFT", 10, y)
+    armed:SetPoint("RIGHT", inset, "RIGHT", -10, 0)
+    armed:SetHeight(24)
     armed:Hide()
+    armed:SetScript("OnShow", function() actions:Hide() end)
+    armed:SetScript("OnHide", function() actions:Show() end)
     card.armed = armed
     armed.go = CreateFrame("Button", "TabardUIMemberGoButton", armed, "SecureActionButtonTemplate, UIPanelButtonTemplate")
-    armed.go:SetSize(256, 22)
+    armed.go:SetHeight(22)
     armed.go:SetPoint("LEFT")
+    armed.go:SetPoint("RIGHT", armed, "RIGHT", -84, 0)   -- up to the Cancel button
     armed.go:RegisterForClicks("LeftButtonUp")
     armed.go:SetAttribute("useOnKeyDown", false)
     armed.go:SetAttribute("type", "macro")

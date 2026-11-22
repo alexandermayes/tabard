@@ -262,15 +262,27 @@ function GL:MainTag(guild, member)
     return " |cffffd100(main)|r"
 end
 
--- The nickname people know a member by: their own, or their main's (a nickname belongs to the person, so it
--- is kept on the main and shown after every character of theirs).
+-- The nickname people know a member by. A nickname belongs to the person: it is written on their main, but
+-- which character is the main can change (by hand, from another officer's records, when ledgers are folded),
+-- and another officer may have set it on a character that is an alt here. So it is read from the whole group:
+-- the character whose nickname was set or cleared last says what the person goes by. Returns the nickname and
+-- the time it was set.
 function GL:Nickname(guild, member)
     if not (guild and member) then return nil end
-    if member.nick then return member.nick end
-    local main, group = self.MainOf and self:MainOf(guild, member)
-    if main and main ~= member and main.nick then return main.nick end
-    if group and group.nick then return group.nick end
-    return nil
+    local main, group = nil, nil
+    if self.MainOf then main, group = self:MainOf(guild, member) end
+    if not group then return member.nick, self:StampOf(member, "nick") end
+    local best, newest = nil, 0
+    local function look(other)
+        if not other then return end
+        local stamp = self:StampOf(other, "nick")
+        if stamp == 0 and other.nick then stamp = 1 end   -- set, with no time kept
+        if stamp > newest then best, newest = other, stamp end
+    end
+    look(main)   -- first, so the main wins between two set in the same second
+    for _, name in ipairs(group.alts) do look(self:Member(guild, name)) end
+    if best then return best.nick, newest end
+    return group.nick, 0
 end
 
 function GL:ClassName(classFile)
@@ -777,7 +789,8 @@ SlashCmdList["TABARD"] = function(message)
             else
                 GL:SetNickname(guild, member, nick, "user")
                 local target = GL:MainOf(guild, member) or member
-                GL:Print(GL:ColoredName(target) .. (target.nick and (" goes by \"" .. target.nick .. "\" now.") or " has no nickname now."))
+                local now = GL:Nickname(guild, target)
+                GL:Print(GL:ColoredName(target) .. (now and (" goes by \"" .. now .. "\" now.") or " has no nickname now."))
                 if GL.RefreshWindow then GL:RefreshWindow() end
             end
         end
