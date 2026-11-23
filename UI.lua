@@ -4419,7 +4419,9 @@ end
 -- while you were away, as on the Overview, how many to-do items are open, and a button for the whole window.
 -- It only shows when there is something on it, and goes away when the window opens.
 local loginCard
-local LOGIN_ROWS = 8
+local LOGIN_ROWS = 14
+local LOGIN_PITCH = 22         -- from one line to the next
+local LOGIN_NAMES, LOGIN_NAME_LINES = 4, 3   -- level-ups: names on a line, and lines of them
 local LOGIN_WIDTH = 560   -- wide enough that the lines are not cut short
 
 local function buildLoginCard()
@@ -4450,19 +4452,19 @@ local function buildLoginCard()
     loginCard.rows = {}
     for i = 1, LOGIN_ROWS + 1 do   -- the last one is the to-do line
         local row = linkRow(loginCard)
-        row:SetPoint("TOPLEFT", inset, "TOPLEFT", 12, -36 - (i - 1) * 20)
+        row:SetPoint("TOPLEFT", inset, "TOPLEFT", 12, -38 - (i - 1) * LOGIN_PITCH)
         row:SetPoint("RIGHT", inset, "RIGHT", -12, 0)
         row:Hide()
         loginCard.rows[i] = row
     end
     loginCard.none = loginCard:CreateFontString(nil, "OVERLAY", "GameFontDisable")
-    loginCard.none:SetPoint("TOPLEFT", inset, "TOPLEFT", 16, -40)
+    loginCard.none:SetPoint("TOPLEFT", inset, "TOPLEFT", 16, -42)
     loginCard.none:SetText("Nothing changed while you were away.")
     loginCard.open = makeButton(loginCard, "Open Tabard", 110, function() GL:ToggleWindow(true) end)
-    loginCard.open:SetPoint("BOTTOMRIGHT", inset, "BOTTOMRIGHT", -12, 10)
+    loginCard.open:SetPoint("BOTTOMRIGHT", inset, "BOTTOMRIGHT", -12, 12)
     explain(loginCard.open, "The whole window: Overview, To-do, Log, Members and the rest.")
     loginCard.hint = loginCard:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    loginCard.hint:SetPoint("LEFT", inset, "BOTTOMLEFT", 16, 21)
+    loginCard.hint:SetPoint("LEFT", inset, "BOTTOMLEFT", 16, 23)
     loginCard.hint:SetPoint("RIGHT", loginCard.open, "LEFT", -8, 0)
     loginCard.hint:SetJustifyH("LEFT")
     loginCard.hint:SetTextColor(0.5, 0.5, 0.5)
@@ -4489,17 +4491,41 @@ function GL:ShowLoginCard()
     end
     local function openTo(go) return function() if GL:ToggleWindow(true) then go() end end end
     local NEWS_ICONS = { green = ICONS.join, red = ICONS.leave, gold = ICONS.promote, blue = ICONS.level, purple = ICONS.note, grey = ICONS.other }
+    -- The lines to draw. Level-ups take up to three, four names on each, so the card names twelve of them
+    -- before it says "and N more".
+    local lines = {}
+    for _, item in ipairs(news) do
+        local go = item.member and openTo(function() openCard(item.member) end) or openTo(function() goLog(item.kinds) end)
+        local hint = item.member and "Click to open the member card." or "Click to see these in the log."
+        local icon = item.icon or NEWS_ICONS[item.accent or "grey"]
+        local names = item.names
+        if names and #names > LOGIN_NAMES then
+            local last = math.min(#names, LOGIN_NAMES * LOGIN_NAME_LINES)
+            for first = 1, last, LOGIN_NAMES do
+                local to = math.min(first + LOGIN_NAMES - 1, last)
+                local text = table.concat(names, ", ", first, to)
+                if first == 1 then text = #names .. " level-ups: " .. text end
+                if to < last then text = text .. ","
+                elseif #names > last then text = text .. " and " .. (#names - last) .. " more" end
+                lines[#lines + 1] = { text = text, accent = item.accent, go = go, hint = hint, icon = first == 1 and icon or nil, more = first > 1 }
+            end
+        else
+            lines[#lines + 1] = { text = item.text, accent = item.accent, go = go, hint = hint, icon = icon }
+        end
+    end
     local rows = loginCard.rows
-    local limit = #news > LOGIN_ROWS and (LOGIN_ROWS - 1) or #news
+    local limit = #lines > LOGIN_ROWS and (LOGIN_ROWS - 1) or #lines
     local used = 0
     for i = 1, LOGIN_ROWS do
-        local row, item = rows[i], news[i]
-        if i <= limit and item then
-            local go = item.member and openTo(function() openCard(item.member) end) or openTo(function() goLog(item.kinds) end)
-            row.Set(item.text, ACCENT[item.accent or "grey"] or ACCENT.grey, go, item.member and "Click to open the member card." or "Click to see these in the log.", item.icon or NEWS_ICONS[item.accent or "grey"])
+        local row, line = rows[i], lines[i]
+        if i <= limit and line then
+            row.Set(line.text, ACCENT[line.accent or "grey"] or ACCENT.grey, line.go, line.hint, line.icon)
+            if line.more then row.dot:Hide() row.arrow:Hide() end   -- the rest of the line above
             used = i
-        elseif i == limit + 1 and #news > LOGIN_ROWS then
-            row.Set(GREY .. "and " .. (#news - limit) .. " more in the log|r", ACCENT.grey, openTo(function() goLog(nil) end), "The log starts with everything since your last visit.", ICONS.other)
+        elseif i == limit + 1 and #lines > LOGIN_ROWS then
+            local left = 0
+            for n = limit + 1, #lines do if not lines[n].more then left = left + 1 end end
+            row.Set(GREY .. "and " .. math.max(left, 1) .. " more in the log|r", ACCENT.grey, openTo(function() goLog(nil) end), "The log starts with everything since your last visit.", ICONS.other)
             used = i
         else
             row:Hide()
@@ -4509,7 +4535,7 @@ function GL:ShowLoginCard()
     local todoRow = rows[LOGIN_ROWS + 1]
     if open > 0 then
         todoRow:ClearAllPoints()
-        todoRow:SetPoint("TOPLEFT", loginCard.inset, "TOPLEFT", 12, -36 - used * 20)
+        todoRow:SetPoint("TOPLEFT", loginCard.inset, "TOPLEFT", 12, -38 - used * LOGIN_PITCH)
         todoRow:SetPoint("RIGHT", loginCard.inset, "RIGHT", -12, 0)
         todoRow.Set(plural(open, "thing", "things") .. " on the to-do list", ACCENT.gold, function() GL:ShowPage("todo") end, "Trials, leaves, likely alts, whispered requests and promotions due.", ICONS.todo)
         used = used + 1
@@ -4517,7 +4543,7 @@ function GL:ShowLoginCard()
         todoRow:Hide()
     end
     loginCard.when:SetText(type(guild.visitSince) == "number" and ("last here " .. self:Ago(guild.visitSince)) or "")
-    loginCard:SetHeight(58 + 36 + used * 20 + 6 + 22 + 10 + 6)
+    loginCard:SetHeight(58 + 38 + used * LOGIN_PITCH + 12 + 22 + 12 + 6)
     loginCard:Show()
     return true
 end

@@ -73,9 +73,8 @@ function GL:WhatsNew(guild)
         end
     end
     if #levels > 0 then
-        local names = {}
-        for i, event in ipairs(levels) do
-            if i > 4 then break end
+        local names = {}   -- every one of them; the line below names four, the login card more
+        for _, event in ipairs(levels) do
             local member = self:Member(guild, event.who)
             names[#names + 1] = (member and self:ColoredName(member) or ("|cffffffff" .. tostring(event.who or "?") .. "|r")) .. " " .. tostring(event.level or "")
         end
@@ -83,9 +82,9 @@ function GL:WhatsNew(guild)
         if #levels == 1 then
             text = "1 level-up: " .. names[1]
         else
-            text = #levels .. " level-ups: " .. table.concat(names, ", ") .. (#levels > 4 and (" and " .. (#levels - 4) .. " more") or "")
+            text = #levels .. " level-ups: " .. table.concat(names, ", ", 1, math.min(4, #names)) .. (#levels > 4 and (" and " .. (#levels - 4) .. " more") or "")
         end
-        items[#items + 1] = { text = text, accent = "blue", kinds = { level = true } }
+        items[#items + 1] = { text = text, accent = "blue", kinds = { level = true }, names = names }
     end
     if other > 0 then
         items[#items + 1] = { text = other .. (other == 1 and " other change" or " other changes") .. " (alts, bans, dates)", accent = "grey", kinds = otherKinds }
