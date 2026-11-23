@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.17
+
+- The login card is taller. Level-ups take up to three lines, four names on each, so it names twelve before "and N more" (it named four and the line was cut short). It shows up to 14 lines before "and N more in the log" (8 before), and the lines have a little more room. A quiet login still gets a short card.
+
 ## 1.2.16
 
 - Fix: nicknames disappeared. A nickname is kept on a person's main, and it was only looked for there, so it vanished from every character of theirs when another character became the main. One way that happened: after the realm's name changed, the empty ledger that was started grouped the characters of people who run Tabard again, sometimes under another main, and 1.2.15 kept that main when it joined the ledgers. Nothing was deleted; the nickname was still on the old main. It is now read from all of a person's characters, the one set or cleared last, so those nicknames are back and a change of main no longer loses them.
